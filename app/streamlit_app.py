@@ -62,7 +62,7 @@ def main() -> None:
 
     with col_metrics:
         st.subheader("Dados meteorologicos")
-        st.dataframe(pd.DataFrame([weather_data]), use_container_width=True)
+        st.dataframe(pd.DataFrame([weather_data]), width="stretch")
 
     with col_alert:
         st.subheader("Alerta")
