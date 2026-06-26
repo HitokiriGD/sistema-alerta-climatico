@@ -56,8 +56,18 @@ usar a API externa.
 Copy-Item .env.example .env
 ```
 
+No arquivo `.env`, configure:
+
+```env
+OPENWEATHER_API_KEY=sua_chave_da_openweather
+DEFAULT_CITY=Brasilia
+DEFAULT_COUNTRY=BR
+```
+
 Para executar somente o prototipo local com entrada manual de dados, a chave de
-API nao e obrigatoria.
+API nao e obrigatoria. Se `OPENWEATHER_API_KEY` nao estiver configurada, o
+dashboard exibira um aviso amigavel ao selecionar OpenWeather e o modo manual
+continuara disponivel.
 
 ## Instalacao
 
@@ -72,6 +82,12 @@ python -m pip install -r requirements.txt
 ```powershell
 streamlit run app\streamlit_app.py
 ```
+
+No dashboard, escolha a fonte dos dados na barra lateral:
+
+- `Entrada manual`: usa os valores preenchidos diretamente na tela.
+- `OpenWeather`: busca dados meteorologicos atuais pela cidade informada usando
+  a chave configurada no `.env`.
 
 ## Testes
 
