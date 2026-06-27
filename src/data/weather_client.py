@@ -13,12 +13,13 @@ def normalize_weather_payload(payload: dict[str, Any]) -> dict[str, float]:
     main = payload.get("main", {})
     wind = payload.get("wind", {})
     rain = payload.get("rain", {})
+    wind_speed_kmh = float(wind.get("speed", 0.0)) * 3.6
 
     return {
         "temperature": float(main.get("temp", 0.0)),
         "feels_like": float(main.get("feels_like", 0.0)),
         "humidity": float(main.get("humidity", 0.0)),
         "precipitation": float(rain.get("1h", 0.0)),
-        "wind_speed": float(wind.get("speed", 0.0)),
+        "wind_speed": wind_speed_kmh,
         "pressure": float(main.get("pressure", 0.0)),
     }

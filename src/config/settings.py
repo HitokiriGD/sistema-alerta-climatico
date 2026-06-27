@@ -15,9 +15,10 @@ class Settings:
     openweather_base_url: str
 
 
-def load_settings() -> Settings:
+def load_settings(load_dotenv_file: bool = True) -> Settings:
     """Carrega variaveis de ambiente usadas pelo projeto."""
-    load_dotenv()
+    if load_dotenv_file:
+        load_dotenv()
 
     return Settings(
         openweather_api_key=os.getenv("OPENWEATHER_API_KEY", ""),

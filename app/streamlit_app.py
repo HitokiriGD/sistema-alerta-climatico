@@ -1,8 +1,22 @@
 import pandas as pd
+import requests
 import streamlit as st
 
 from src.alerts.risk_classifier import classify_weather_risk
 from src.config.settings import load_settings
+from src.config.settings import Settings
+from src.data.openweather_client import OpenWeatherClient
+from src.data.weather_client import normalize_weather_payload
+
+
+STANDARD_WEATHER_FIELDS = [
+    "temperature",
+    "feels_like",
+    "humidity",
+    "precipitation",
+    "wind_speed",
+    "pressure",
+]
 
 
 def build_manual_weather_data() -> dict[str, float]:
@@ -41,6 +55,59 @@ def build_manual_weather_data() -> dict[str, float]:
     }
 
 
+def build_openweather_weather_data(settings: Settings) -> dict[str, float] | None:
+    """Coleta dados meteorologicos atuais usando a OpenWeather."""
+    city = st.text_input("Cidade", value=settings.default_city)
+
+    if not settings.openweather_api_key:
+        st.warning(
+            "Configure OPENWEATHER_API_KEY no arquivo .env para usar a "
+            "OpenWeather. A entrada manual continua disponivel."
+        )
+        return None
+
+    if not city.strip():
+        st.info("Informe uma cidade para buscar os dados meteorologicos atuais.")
+        return None
+
+    if not st.button("Buscar dados atuais"):
+        st.info("Clique no botao para consultar a OpenWeather.")
+        return None
+
+    try:
+        client = OpenWeatherClient(settings)
+        payload = client.fetch_current_weather(city.strip())
+        return normalize_weather_payload(payload)
+    except requests.HTTPError as error:
+        status_code = (
+            error.response.status_code
+            if error.response is not None
+            else "sem status"
+        )
+        st.error(
+            "A OpenWeather retornou um erro "
+            f"({status_code}). Verifique a cidade informada e a chave da API."
+        )
+    except requests.RequestException:
+        st.error(
+            "Nao foi possivel conectar a OpenWeather. Verifique sua conexao "
+            "e tente novamente."
+        )
+    except ValueError as error:
+        st.error(str(error))
+
+    return None
+
+
+def show_weather_data(weather_data: dict[str, float]) -> None:
+    """Exibe os campos meteorologicos padronizados no dashboard."""
+    ordered_data = {
+        field: weather_data.get(field, 0.0)
+        for field in STANDARD_WEATHER_FIELDS
+    }
+    st.dataframe(pd.DataFrame([ordered_data]), width="stretch")
+
+
 def main() -> None:
     """Executa o dashboard Streamlit do projeto."""
     settings = load_settings()
@@ -54,21 +121,34 @@ def main() -> None:
     st.sidebar.header("Configuracao")
     st.sidebar.write(f"Cidade padrao: {settings.default_city}")
     st.sidebar.write(f"Pais padrao: {settings.default_country}")
+    data_source = st.sidebar.radio(
+        "Fonte dos dados",
+        ["Entrada manual", "OpenWeather"],
+    )
 
-    weather_data = build_manual_weather_data()
-    risk = classify_weather_risk(weather_data)
+    if data_source == "Entrada manual":
+        weather_data = build_manual_weather_data()
+    else:
+        weather_data = build_openweather_weather_data(settings)
 
     col_metrics, col_alert = st.columns([2, 1])
 
     with col_metrics:
         st.subheader("Dados meteorologicos")
-        st.dataframe(pd.DataFrame([weather_data]), width="stretch")
+        if weather_data:
+            show_weather_data(weather_data)
+        else:
+            st.info("Nenhum dado meteorologico carregado nesta fonte.")
 
     with col_alert:
         st.subheader("Alerta")
-        st.metric("Nivel de risco", risk.level.upper())
-        st.write(f"Evento: {risk.event}")
-        st.info(risk.message)
+        if weather_data:
+            risk = classify_weather_risk(weather_data)
+            st.metric("Nivel de risco", risk.level.upper())
+            st.write(f"Evento: {risk.event}")
+            st.info(risk.message)
+        else:
+            st.info("Carregue dados meteorologicos para gerar o alerta.")
 
 
 if __name__ == "__main__":
