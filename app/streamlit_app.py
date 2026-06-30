@@ -7,6 +7,7 @@ from src.config.settings import load_settings
 from src.config.settings import Settings
 from src.data.openweather_client import OpenWeatherClient
 from src.data.weather_client import normalize_weather_payload
+from src.data.inmet_client import InmetClient
 
 
 STANDARD_WEATHER_FIELDS = [
@@ -99,6 +100,44 @@ def build_openweather_weather_data(settings: Settings) -> dict[str, float] | Non
     return None
 
 
+def build_inmet_weather_data(settings: Settings) -> dict[str, float] | None:
+    """Coleta dados meteorologicos atuais usando a API do INMET."""
+    station_code = st.text_input("Codigo da Estacao INMET", value="A001")
+    st.caption("A001 é o código padrão da estação de Brasília.")
+
+    if not station_code.strip():
+        st.info("Informe um codigo de estacao valido do INMET.")
+        return None
+
+    if not st.button("Buscar dados do INMET"):
+        st.info("Clique no botao para consultar a estacao do INMET.")
+        return None
+
+    try:
+        client = InmetClient(settings)
+        weather_data = client.get_current_weather(station_code.strip())
+        
+        if weather_data:
+            return weather_data
+        else:
+            st.warning("O INMET retornou uma resposta vazia para esta estacao. Ela pode estar offline.")
+            return None
+            
+    except requests.HTTPError as error:
+        status_code = (
+            error.response.status_code
+            if error.response is not None
+            else "sem status"
+        )
+        st.error(f"O INMET retornou um erro ({status_code}). Verifique o codigo da estacao.")
+    except requests.RequestException:
+        st.error("Nao foi possivel conectar ao INMET. A API pode estar indisponivel no momento.")
+    except ValueError as error:
+        st.error(f"Erro ao processar dados da estacao: {str(error)}")
+
+    return None
+
+
 def show_weather_data(weather_data: dict[str, float]) -> None:
     """Exibe os campos meteorologicos padronizados no dashboard."""
     ordered_data = {
@@ -121,15 +160,20 @@ def main() -> None:
     st.sidebar.header("Configuracao")
     st.sidebar.write(f"Cidade padrao: {settings.default_city}")
     st.sidebar.write(f"Pais padrao: {settings.default_country}")
+    
+    # Atualizado para incluir o INMET
     data_source = st.sidebar.radio(
         "Fonte dos dados",
-        ["Entrada manual", "OpenWeather"],
+        ["Entrada manual", "OpenWeather", "INMET"],
     )
 
+    # Lógica de roteamento baseada na escolha do usuário
     if data_source == "Entrada manual":
         weather_data = build_manual_weather_data()
-    else:
+    elif data_source == "OpenWeather":
         weather_data = build_openweather_weather_data(settings)
+    else:
+        weather_data = build_inmet_weather_data(settings)
 
     col_metrics, col_alert = st.columns([2, 1])
 
