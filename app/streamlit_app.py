@@ -3,11 +3,12 @@ import requests
 import streamlit as st
 
 from src.alerts.risk_classifier import classify_weather_risk
-from src.config.settings import load_settings
 from src.config.settings import Settings
+from src.config.settings import load_settings
+from src.data.inmet_client import InmetClient
+from src.data.inmet_client import InmetHistoricalDataError
 from src.data.openweather_client import OpenWeatherClient
 from src.data.weather_client import normalize_weather_payload
-from src.data.inmet_client import InmetClient
 
 
 STANDARD_WEATHER_FIELDS = [
@@ -100,44 +101,6 @@ def build_openweather_weather_data(settings: Settings) -> dict[str, float] | Non
     return None
 
 
-def build_inmet_weather_data(settings: Settings) -> dict[str, float] | None:
-    """Coleta dados meteorologicos atuais usando a API do INMET."""
-    station_code = st.text_input("Codigo da Estacao INMET", value="A001")
-    st.caption("A001 é o código padrão da estação de Brasília.")
-
-    if not station_code.strip():
-        st.info("Informe um codigo de estacao valido do INMET.")
-        return None
-
-    if not st.button("Buscar dados do INMET"):
-        st.info("Clique no botao para consultar a estacao do INMET.")
-        return None
-
-    try:
-        client = InmetClient(settings)
-        weather_data = client.get_current_weather(station_code.strip())
-        
-        if weather_data:
-            return weather_data
-        else:
-            st.warning("O INMET retornou uma resposta vazia para esta estacao. Ela pode estar offline.")
-            return None
-            
-    except requests.HTTPError as error:
-        status_code = (
-            error.response.status_code
-            if error.response is not None
-            else "sem status"
-        )
-        st.error(f"O INMET retornou um erro ({status_code}). Verifique o codigo da estacao.")
-    except requests.RequestException:
-        st.error("Nao foi possivel conectar ao INMET. A API pode estar indisponivel no momento.")
-    except ValueError as error:
-        st.error(f"Erro ao processar dados da estacao: {str(error)}")
-
-    return None
-
-
 def show_weather_data(weather_data: dict[str, float]) -> None:
     """Exibe os campos meteorologicos padronizados no dashboard."""
     ordered_data = {
@@ -145,6 +108,78 @@ def show_weather_data(weather_data: dict[str, float]) -> None:
         for field in STANDARD_WEATHER_FIELDS
     }
     st.dataframe(pd.DataFrame([ordered_data]), width="stretch")
+
+
+def show_inmet_historical_section(settings: Settings) -> None:
+    """Exibe consulta historica local do INMET sem gerar alerta."""
+    st.divider()
+    st.subheader("Base historica INMET")
+    st.caption(
+        "O INMET e usado como base historica oficial para comparacao e futuro "
+        "treinamento dos modelos. Ele nao e usado como clima atual."
+    )
+
+    col_station, col_start, col_end = st.columns(3)
+    with col_station:
+        station_code = st.text_input("Codigo da estacao INMET", value="A001")
+    with col_start:
+        start_year = st.number_input(
+            "Ano inicial",
+            min_value=2000,
+            max_value=2100,
+            value=settings.inmet_historical_start_year,
+            step=1,
+        )
+    with col_end:
+        end_year = st.number_input(
+            "Ano final",
+            min_value=2000,
+            max_value=2100,
+            value=settings.inmet_historical_end_year,
+            step=1,
+        )
+
+    if not st.button("Carregar historico INMET"):
+        st.info("Informe a estacao e carregue a base historica local do INMET.")
+        return
+
+    if not station_code.strip():
+        st.warning("Informe um codigo de estacao valido do INMET.")
+        return
+
+    try:
+        history = InmetClient(settings).load_station_history(
+            station_code.strip(),
+            int(start_year),
+            int(end_year),
+        )
+    except InmetHistoricalDataError as error:
+        st.warning(str(error))
+        return
+
+    if history.empty:
+        st.warning("Nenhum registro historico foi carregado para esta estacao.")
+        return
+
+    st.success("Historico INMET carregado com sucesso.")
+    st.write(
+        "Periodo disponivel: "
+        f"{history['date'].min()} a {history['date'].max()}"
+    )
+    st.write(f"Quantidade de registros: {len(history)}")
+
+    averages = history[
+        ["temperature", "humidity", "pressure", "wind_speed", "precipitation"]
+    ].mean()
+    metric_columns = st.columns(5)
+    metric_columns[0].metric("Temperatura media", f"{averages['temperature']:.1f} C")
+    metric_columns[1].metric("Umidade media", f"{averages['humidity']:.1f}%")
+    metric_columns[2].metric("Pressao media", f"{averages['pressure']:.1f} hPa")
+    metric_columns[3].metric("Vento medio", f"{averages['wind_speed']:.1f} km/h")
+    metric_columns[4].metric(
+        "Precipitacao media",
+        f"{averages['precipitation']:.1f} mm",
+    )
 
 
 def main() -> None:
@@ -160,29 +195,25 @@ def main() -> None:
     st.sidebar.header("Configuracao")
     st.sidebar.write(f"Cidade padrao: {settings.default_city}")
     st.sidebar.write(f"Pais padrao: {settings.default_country}")
-    
-    # Atualizado para incluir o INMET
+
     data_source = st.sidebar.radio(
-        "Fonte dos dados",
-        ["Entrada manual", "OpenWeather", "INMET"],
+        "Fonte dos dados atuais",
+        ["Entrada manual", "OpenWeather"],
     )
 
-    # Lógica de roteamento baseada na escolha do usuário
     if data_source == "Entrada manual":
         weather_data = build_manual_weather_data()
-    elif data_source == "OpenWeather":
-        weather_data = build_openweather_weather_data(settings)
     else:
-        weather_data = build_inmet_weather_data(settings)
+        weather_data = build_openweather_weather_data(settings)
 
     col_metrics, col_alert = st.columns([2, 1])
 
     with col_metrics:
-        st.subheader("Dados meteorologicos")
+        st.subheader("Dados meteorologicos atuais")
         if weather_data:
             show_weather_data(weather_data)
         else:
-            st.info("Nenhum dado meteorologico carregado nesta fonte.")
+            st.info("Nenhum dado meteorologico atual carregado.")
 
     with col_alert:
         st.subheader("Alerta")
@@ -192,7 +223,9 @@ def main() -> None:
             st.write(f"Evento: {risk.event}")
             st.info(risk.message)
         else:
-            st.info("Carregue dados meteorologicos para gerar o alerta.")
+            st.info("Carregue dados meteorologicos atuais para gerar o alerta.")
+
+    show_inmet_historical_section(settings)
 
 
 if __name__ == "__main__":

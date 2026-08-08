@@ -11,8 +11,10 @@ class Settings:
     openweather_api_key: str
     default_city: str
     default_country: str
-    inmet_base_url: str
     openweather_base_url: str
+    inmet_historical_zip_dir: str
+    inmet_historical_start_year: int
+    inmet_historical_end_year: int
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -24,9 +26,18 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
         openweather_api_key=os.getenv("OPENWEATHER_API_KEY", ""),
         default_city=os.getenv("DEFAULT_CITY", "Brasilia"),
         default_country=os.getenv("DEFAULT_COUNTRY", "BR"),
-        inmet_base_url=os.getenv("INMET_BASE_URL", "https://apitempo.inmet.gov.br"),
         openweather_base_url=os.getenv(
             "OPENWEATHER_BASE_URL",
             "https://api.openweathermap.org/data/2.5",
+        ),
+        inmet_historical_zip_dir=os.getenv(
+            "INMET_HISTORICAL_ZIP_DIR",
+            "data/raw/inmet/zips",
+        ),
+        inmet_historical_start_year=int(
+            os.getenv("INMET_HISTORICAL_START_YEAR", "2020")
+        ),
+        inmet_historical_end_year=int(
+            os.getenv("INMET_HISTORICAL_END_YEAR", "2026")
         ),
     )
