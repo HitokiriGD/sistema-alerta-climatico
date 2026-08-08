@@ -3,9 +3,10 @@ __pycache__/
 .env
 .venv/
 venv/
-data/raw/*
-!data/raw/.gitkeep
+data/raw/
 data/processed/*
 !data/processed/.gitkeep
 .ipynb_checkpoints/
 .DS_Store
+*.zip
+*.har
