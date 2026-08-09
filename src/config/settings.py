@@ -15,6 +15,7 @@ class Settings:
     inmet_historical_zip_dir: str
     inmet_historical_start_year: int
     inmet_historical_end_year: int
+    inmet_processed_data_path: str
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -39,5 +40,9 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
         ),
         inmet_historical_end_year=int(
             os.getenv("INMET_HISTORICAL_END_YEAR", "2026")
+        ),
+        inmet_processed_data_path=os.getenv(
+            "INMET_PROCESSED_DATA_PATH",
+            "data/processed/inmet_hourly.parquet",
         ),
     )

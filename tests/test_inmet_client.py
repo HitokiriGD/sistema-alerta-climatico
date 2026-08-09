@@ -2,8 +2,10 @@ from pathlib import Path
 from unittest.mock import Mock
 from zipfile import ZipFile
 
+import pandas as pd
 import pytest
 
+from scripts.build_inmet_dataset import build_processed_inmet_dataset
 from src.config.settings import Settings
 from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
@@ -15,6 +17,7 @@ def make_settings(zip_dir: Path) -> Settings:
     settings.inmet_historical_zip_dir = str(zip_dir)
     settings.inmet_historical_start_year = 2020
     settings.inmet_historical_end_year = 2021
+    settings.inmet_processed_data_path = "data/processed/inmet_hourly.parquet"
     return settings
 
 
@@ -109,7 +112,7 @@ def test_load_station_history_normalizes_decimal_and_wind_speed(tmp_path):
     assert history.loc[1, "precipitation"] == 1.5
     assert history.loc[1, "wind_speed"] == 9.0
     assert history.loc[1, "pressure"] == 888.1
-    assert history.loc[1, "feels_like"] == 0.0
+    assert pd.isna(history.loc[1, "feels_like"])
 
 
 def test_load_station_history_combines_multiple_zips(tmp_path):
@@ -148,3 +151,45 @@ def test_filter_zips_by_year_interval(tmp_path):
     )
 
     assert [path.name for path in filtered_paths] == ["2020.zip"]
+
+
+def test_build_processed_inmet_dataset_with_simulated_client(tmp_path, monkeypatch):
+    class FakeInmetClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def load_station_history(self, station_code, start_year=None, end_year=None):
+            assert station_code == "A001"
+            assert start_year == 2020
+            assert end_year == 2020
+            return pd.DataFrame(
+                [
+                    {
+                        "station_code": "A001",
+                        "datetime": "2020-01-01 00:00:00",
+                        "temperature": "20,5",
+                        "feels_like": None,
+                        "humidity": "80",
+                        "precipitation": "0",
+                        "wind_speed": "3,6",
+                        "pressure": "1009,5",
+                        "source": "INMET Historico",
+                    }
+                ]
+            )
+
+    monkeypatch.setattr("scripts.build_inmet_dataset.InmetClient", FakeInmetClient)
+    output_path = tmp_path / "inmet_hourly.csv"
+
+    saved_path = build_processed_inmet_dataset(
+        station_code="A001",
+        start_year=2020,
+        end_year=2020,
+        output_path=output_path,
+        settings=make_settings(tmp_path),
+    )
+
+    saved_data = pd.read_csv(saved_path)
+    assert saved_path == output_path
+    assert saved_data.loc[0, "temperature"] == 20.5
+    assert saved_data.loc[0, "quality_flag"] == "incomplete"
