@@ -144,6 +144,34 @@ data/processed/inmet_hourly.csv
 Esse dataset tratado sera usado nas proximas etapas para comparacao historica e
 futura modelagem com aprendizado de maquina.
 
+## Classificador por Regras
+
+A etapa atual implementa um classificador inicial por regras em
+`src/alerts/risk_classifier.py`. Ele usa os dados meteorologicos atuais
+padronizados, vindos da `Entrada manual` ou da `OpenWeather`, para gerar uma
+saida explicavel antes da etapa de aprendizado de maquina.
+
+A resposta do classificador contem:
+
+- `risk_level`: `baixo`, `moderado`, `alto` ou `critico`;
+- `event_type`: principal tipo de evento climatico identificado;
+- `reason`: justificativa textual da classificacao;
+- `triggered_rules`: regras acionadas;
+- `variables`: variaveis meteorologicas consideradas;
+- `recommendations`: orientacoes gerais curtas.
+
+Os tipos iniciais de evento sao `sem_risco_relevante`, `baixa_umidade`,
+`calor_extremo`, `frio_intenso`, `chuva_intensa`, `vento_forte` e
+`risco_incendio`. As regras avaliam limites simples de umidade, temperatura,
+sensacao termica, precipitacao e vento. Quando mais de uma regra e acionada, o
+evento principal e definido pela maior severidade, mantendo todas as regras na
+lista de evidencias.
+
+Essas regras sao heuristicas iniciais do prototipo academico. Elas nao
+substituem alertas oficiais de defesa civil ou de orgaos meteorologicos. O
+INMET historico continua separado como base de consulta, comparacao e futura
+modelagem; ele nao gera alerta atual sozinho nesta etapa.
+
 ## Instalacao
 
 ```powershell

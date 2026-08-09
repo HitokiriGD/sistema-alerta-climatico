@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from src.alerts.risk_classifier import WeatherRisk
 from src.alerts.risk_classifier import classify_weather_risk
 from src.config.settings import Settings
 from src.config.settings import load_settings
@@ -108,6 +109,31 @@ def show_weather_data(weather_data: dict[str, float]) -> None:
         for field in STANDARD_WEATHER_FIELDS
     }
     st.dataframe(pd.DataFrame([ordered_data]), width="stretch")
+
+
+def show_weather_risk(risk: WeatherRisk) -> None:
+    """Exibe o resultado explicavel do classificador por regras."""
+    st.metric("Nivel de risco", risk.risk_level.upper())
+    st.write(f"Evento climatico: {risk.event_type}")
+    st.info(risk.reason)
+    st.caption(
+        "Classificacao heuristica do prototipo academico; nao substitui "
+        "alertas oficiais de defesa civil ou orgaos meteorologicos."
+    )
+
+    st.write("Variaveis consideradas")
+    st.dataframe(pd.DataFrame([risk.variables]), width="stretch")
+
+    if risk.triggered_rules:
+        st.write("Regras ativadas")
+        for rule in risk.triggered_rules:
+            st.write(f"- {rule}")
+    else:
+        st.write("Regras ativadas: nenhuma regra relevante.")
+
+    st.write("Orientacoes gerais")
+    for recommendation in risk.recommendations:
+        st.write(f"- {recommendation}")
 
 
 def show_inmet_historical_section(settings: Settings) -> None:
@@ -219,9 +245,7 @@ def main() -> None:
         st.subheader("Alerta")
         if weather_data:
             risk = classify_weather_risk(weather_data)
-            st.metric("Nivel de risco", risk.level.upper())
-            st.write(f"Evento: {risk.event}")
-            st.info(risk.message)
+            show_weather_risk(risk)
         else:
             st.info("Carregue dados meteorologicos atuais para gerar o alerta.")
 
