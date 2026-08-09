@@ -1,3 +1,4 @@
+import re
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,27 @@ STANDARD_COLUMNS = [
     "pressure",
     "source",
 ]
+STATION_CATALOG_COLUMNS = [
+    "station_code",
+    "station_name",
+    "station_name_normalized",
+    "city",
+    "city_normalized",
+    "state",
+    "region",
+    "latitude",
+    "longitude",
+    "altitude",
+    "first_available_year",
+    "last_available_year",
+    "station_label",
+]
+INMET_CSV_NAME_PATTERN = re.compile(
+    r"^INMET_(?P<region>[^_]+)_(?P<state>[A-Z]{2})_"
+    r"(?P<station_code>[A-Z]\d{3})_(?P<station_name>.+?)_"
+    r"\d{2}-\d{2}-\d{4}_A_\d{2}-\d{2}-\d{4}\.CSV$",
+    re.IGNORECASE,
+)
 INMET_COLUMN_MAPPING = {
     "TEMPERATURA DO AR - BULBO SECO, HORARIA (degC)": "temperature",
     "UMIDADE RELATIVA DO AR, HORARIA (%)": "humidity",
@@ -35,6 +57,41 @@ INMET_COLUMN_MAPPING = {
 
 class InmetHistoricalDataError(Exception):
     """Erro esperado ao carregar a base historica local do INMET."""
+
+
+def normalize_city_name(city: str) -> str:
+    """Normaliza nome de cidade para busca simples no catalogo INMET."""
+    ascii_city = "".join(
+        char
+        for char in unicodedata.normalize("NFKD", city.strip())
+        if not unicodedata.combining(char)
+    )
+    return " ".join(ascii_city.upper().split())
+
+
+def parse_inmet_station_from_csv_name(csv_name: str) -> dict[str, str] | None:
+    """Extrai identificacao da estacao pelo nome do CSV historico do INMET."""
+    file_name = Path(csv_name).name
+    match = INMET_CSV_NAME_PATTERN.match(file_name)
+    if match is None:
+        return None
+
+    station_name = match.group("station_name").replace("_", " ").strip().upper()
+    return {
+        "region": match.group("region").strip().upper(),
+        "state": match.group("state").strip().upper(),
+        "station_code": match.group("station_code").strip().upper(),
+        "station_name": station_name,
+        "city": station_name,
+    }
+
+
+def format_station_catalog_label(station: dict[str, Any] | pd.Series) -> str:
+    """Formata label pesquisavel para selecao de estacao INMET."""
+    return (
+        f"{station['station_name']} - {station['state']} | "
+        f"{station['station_code']}"
+    )
 
 
 class InmetClient:
@@ -116,8 +173,156 @@ class InmetClient:
         return {
             "station_code": metadata.get("CODIGO (WMO)", ""),
             "station_name": metadata.get("ESTACAO", ""),
+            "city": metadata.get("ESTACAO", ""),
             "state": metadata.get("UF", ""),
+            "region": metadata.get("REGIAO", ""),
+            "latitude": metadata.get("LATITUDE", ""),
+            "longitude": metadata.get("LONGITUDE", ""),
+            "altitude": metadata.get("ALTITUDE", ""),
         }
+
+    def build_station_catalog(self) -> pd.DataFrame:
+        """Constroi catalogo local de estacoes lendo metadados dos ZIPs."""
+        stations: dict[str, dict[str, Any]] = {}
+        zip_paths = self.filter_zips_by_year(
+            self.list_available_zips(),
+            self.settings.inmet_historical_start_year,
+            self.settings.inmet_historical_end_year,
+        )
+
+        for zip_path in zip_paths:
+            year = self._zip_year(zip_path)
+            if year is None:
+                continue
+
+            with ZipFile(zip_path) as zip_file:
+                csv_names = [
+                    entry_name
+                    for entry_name in zip_file.namelist()
+                    if entry_name.upper().endswith(".CSV")
+                ]
+
+            for csv_name in csv_names:
+                parsed_station = parse_inmet_station_from_csv_name(csv_name)
+                if parsed_station is None:
+                    continue
+
+                station_code = parsed_station["station_code"]
+                if not station_code:
+                    continue
+
+                station = stations.get(station_code)
+                if station is None:
+                    metadata = self.read_station_metadata(zip_path, csv_name)
+                    station_name = parsed_station["station_name"]
+                    city = parsed_station["city"]
+                    station = {
+                        "station_code": station_code,
+                        "station_name": station_name,
+                        "station_name_normalized": normalize_city_name(station_name),
+                        "city": city,
+                        "city_normalized": normalize_city_name(city),
+                        "state": parsed_station["state"],
+                        "region": parsed_station["region"],
+                        "latitude": self._decimal_text_to_float(metadata["latitude"]),
+                        "longitude": self._decimal_text_to_float(metadata["longitude"]),
+                        "altitude": self._decimal_text_to_float(metadata["altitude"]),
+                        "first_available_year": year,
+                        "last_available_year": year,
+                        "station_label": "",
+                    }
+                    station["station_label"] = format_station_catalog_label(station)
+                    stations[station_code] = station
+                else:
+                    station["first_available_year"] = min(
+                        station["first_available_year"],
+                        year,
+                    )
+                    station["last_available_year"] = max(
+                        station["last_available_year"],
+                        year,
+                    )
+
+        catalog = pd.DataFrame(stations.values(), columns=STATION_CATALOG_COLUMNS)
+        if catalog.empty:
+            raise InmetHistoricalDataError(
+                "Nenhuma estacao INMET encontrada nos ZIPs historicos."
+            )
+
+        return catalog.sort_values(["state", "city", "station_code"]).reset_index(
+            drop=True
+        )
+
+    def list_station_options(self) -> list[dict[str, Any]]:
+        """Lista estacoes disponiveis para selecao no dashboard."""
+        catalog = self.build_station_catalog()
+        return [station.to_dict() for _, station in catalog.iterrows()]
+
+    def find_station_by_label(
+        self,
+        station_label: str,
+        catalog: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        """Recupera uma estacao do catalogo pelo label exibido ao usuario."""
+        if catalog is None:
+            station_catalog = self.build_station_catalog()
+        else:
+            station_catalog = catalog
+
+        matches = station_catalog[
+            station_catalog["station_label"] == station_label
+        ].reset_index(drop=True)
+        if matches.empty:
+            raise InmetHistoricalDataError(
+                f"Estacao INMET nao encontrada para a opcao: {station_label}."
+            )
+
+        return matches.iloc[0].to_dict()
+
+    def find_stations_by_city_state(
+        self,
+        city: str,
+        state: str,
+        catalog: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        """Busca estacoes do catalogo por cidade e UF."""
+        if not city.strip() or not state.strip():
+            raise InmetHistoricalDataError("Informe cidade e UF para buscar a estacao.")
+
+        if catalog is None:
+            station_catalog = self.build_station_catalog()
+        else:
+            station_catalog = catalog
+        city_normalized = normalize_city_name(city)
+        state_normalized = state.strip().upper()
+
+        matches = station_catalog[
+            (station_catalog["city_normalized"] == city_normalized)
+            & (station_catalog["state"].str.upper() == state_normalized)
+        ].reset_index(drop=True)
+
+        if matches.empty:
+            raise InmetHistoricalDataError(
+                "Nenhuma estacao INMET encontrada para "
+                f"{city.strip()}/{state_normalized}."
+            )
+
+        return matches
+
+    def find_station_by_city_state(
+        self,
+        city: str,
+        state: str,
+        catalog: pd.DataFrame | None = None,
+    ) -> dict[str, Any]:
+        """Retorna uma unica estacao por cidade/UF quando nao ha ambiguidade."""
+        matches = self.find_stations_by_city_state(city, state, catalog)
+        if len(matches) > 1:
+            raise InmetHistoricalDataError(
+                f"Mais de uma estacao encontrada para {city.strip()}/{state.upper()}."
+            )
+
+        return matches.iloc[0].to_dict()
 
     def read_hourly_data(self, zip_path: Path, csv_name: str) -> pd.DataFrame:
         """Le os dados horarios de um CSV historico do INMET."""
@@ -219,6 +424,13 @@ class InmetClient:
         values = data[column].astype(str).str.replace(",", ".", regex=False)
         values = values.str.replace("^\\s*$", "", regex=True)
         return pd.to_numeric(values, errors="coerce")
+
+    def _decimal_text_to_float(self, value: str) -> float | None:
+        text = str(value).strip().replace(",", ".")
+        numeric_value = pd.to_numeric(text, errors="coerce")
+        if pd.isna(numeric_value):
+            return None
+        return float(numeric_value)
 
     def _build_datetime(
         self,
