@@ -16,6 +16,7 @@ class Settings:
     inmet_historical_start_year: int
     inmet_historical_end_year: int
     inmet_processed_data_path: str
+    inmet_station_catalog_path: str
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -44,5 +45,9 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
         inmet_processed_data_path=os.getenv(
             "INMET_PROCESSED_DATA_PATH",
             "data/processed/inmet_hourly.parquet",
+        ),
+        inmet_station_catalog_path=os.getenv(
+            "INMET_STATION_CATALOG_PATH",
+            "data/processed/inmet_station_catalog.csv",
         ),
     )
