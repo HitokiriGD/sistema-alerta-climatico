@@ -68,6 +68,7 @@ INMET_HISTORICAL_ZIP_DIR=data/raw/inmet/zips
 INMET_HISTORICAL_START_YEAR=2020
 INMET_HISTORICAL_END_YEAR=2026
 INMET_PROCESSED_DATA_PATH=data/processed/inmet_hourly.parquet
+INMET_STATION_CATALOG_PATH=data/processed/inmet_station_catalog.csv
 ```
 
 Para executar somente o prototipo local com entrada manual de dados, a chave de
@@ -106,6 +107,33 @@ A pasta `data/processed/` armazena datasets tratados gerados localmente pelo
 pipeline de pre-tratamento. Arquivos grandes como `*.parquet` e `*.csv` nessa
 pasta tambem ficam ignorados pelo Git; apenas a estrutura da pasta e mantida no
 repositorio.
+
+O INMET historico pode ser consultado por um seletor pesquisavel de estacao no
+dashboard. O sistema resolve internamente o codigo da estacao usando um
+catalogo local construido a partir dos nomes dos CSVs presentes nos ZIPs anuais
+brutos do INMET, complementando latitude, longitude e altitude com metadados
+quando disponiveis. Por exemplo, as opcoes aparecem como `MANAUS - AM | A101`
+e `BRASILIA - DF | A001`, quando essas estacoes existirem nos ZIPs locais.
+
+O dataset tratado em `data/processed/inmet_hourly.parquet` nao e usado para
+descobrir estacoes, pois ele pode ter sido gerado apenas para uma unica
+estacao. A descoberta do catalogo sempre parte dos ZIPs brutos em
+`data/raw/inmet/zips/`.
+
+Para gerar um CSV local com o catalogo de estacoes, execute:
+
+```powershell
+python scripts\build_inmet_station_catalog.py
+```
+
+O arquivo sera salvo por padrao em:
+
+```text
+data/processed/inmet_station_catalog.csv
+```
+
+Esse catalogo e derivado dos nomes/metadados dos CSVs nos ZIPs e nao e
+versionado no Git.
 
 ## Pre-tratamento dos Dados
 
@@ -192,10 +220,12 @@ No dashboard, escolha a fonte dos dados na barra lateral:
 - `OpenWeather`: busca dados meteorologicos atuais pela cidade informada usando
   a chave configurada no `.env`.
 
-A secao `Base historica INMET` fica separada dos dados atuais. Informe o codigo
-da estacao, como `A001`, e o intervalo de anos para carregar os ZIPs locais,
-visualizar o periodo disponivel, a quantidade de registros e medias historicas.
-Esses dados historicos nao geram alerta climatico diretamente nesta etapa.
+A secao `Base historica INMET` fica separada dos dados atuais. Selecione uma
+estacao no campo pesquisavel, como `MANAUS - AM | A101`, informe o intervalo
+de anos e carregue os ZIPs locais para visualizar o periodo disponivel, a
+quantidade de registros e medias historicas. Tambem ha uma opcao avancada para
+informar manualmente o codigo da estacao, como `A001`. Esses dados historicos
+nao geram alerta climatico diretamente nesta etapa.
 
 ## Testes
 

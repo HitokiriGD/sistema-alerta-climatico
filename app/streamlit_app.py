@@ -145,9 +145,40 @@ def show_inmet_historical_section(settings: Settings) -> None:
         "treinamento dos modelos. Ele nao e usado como clima atual."
     )
 
-    col_station, col_start, col_end = st.columns(3)
-    with col_station:
-        station_code = st.text_input("Codigo da estacao INMET", value="A001")
+    client = InmetClient(settings)
+    selected_station: dict[str, object] | None = None
+    station_code = ""
+    station_label = ""
+
+    try:
+        station_options = client.list_station_options()
+        option_labels = [
+            str(station["station_label"])
+            for station in station_options
+        ]
+        selected_label = st.selectbox(
+            "Estacao INMET",
+            option_labels,
+            index=0,
+        )
+        selected_station = station_options[option_labels.index(selected_label)]
+        station_code = str(selected_station["station_code"])
+        station_label = selected_label
+    except InmetHistoricalDataError as error:
+        st.warning(str(error))
+
+    with st.expander("Opcao avancada: informar codigo manualmente"):
+        manual_station_code = st.text_input(
+            "Codigo da estacao INMET",
+            value="",
+            placeholder="Exemplo: A101",
+        )
+        if manual_station_code.strip():
+            station_code = manual_station_code.strip().upper()
+            station_label = f"{station_code} - codigo informado manualmente"
+            selected_station = None
+
+    col_start, col_end = st.columns(2)
     with col_start:
         start_year = st.number_input(
             "Ano inicial",
@@ -165,17 +196,24 @@ def show_inmet_historical_section(settings: Settings) -> None:
             step=1,
         )
 
-    if not st.button("Carregar historico INMET"):
-        st.info("Informe a estacao e carregue a base historica local do INMET.")
-        return
+    if selected_station is not None:
+        st.write(f"Estacao selecionada: {station_label}")
+        st.write(f"Codigo da estacao: {selected_station['station_code']}")
+        st.write(f"UF: {selected_station['state']}")
 
-    if not station_code.strip():
-        st.warning("Informe um codigo de estacao valido do INMET.")
+    if not st.button("Carregar historico INMET"):
+        st.info("Selecione uma estacao e carregue a base historica local do INMET.")
         return
 
     try:
-        history = InmetClient(settings).load_station_history(
-            station_code.strip(),
+        if not station_code:
+            st.warning("Selecione uma estacao ou informe um codigo valido.")
+            return
+
+        if selected_station is None:
+            st.write(f"Estacao selecionada: {station_label}")
+        history = client.load_station_history(
+            station_code,
             int(start_year),
             int(end_year),
         )
