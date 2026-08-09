@@ -152,7 +152,7 @@ class InmetClient:
             normalized_data["hour"],
         )
         normalized_data["temperature"] = self._numeric_column(data, "temperature")
-        normalized_data["feels_like"] = 0.0
+        normalized_data["feels_like"] = pd.NA
         normalized_data["humidity"] = self._numeric_column(data, "humidity")
         normalized_data["precipitation"] = self._numeric_column(data, "precipitation")
         normalized_data["wind_speed"] = self._numeric_column(data, "wind_speed") * 3.6
@@ -214,11 +214,11 @@ class InmetClient:
 
     def _numeric_column(self, data: pd.DataFrame, column: str) -> pd.Series:
         if column not in data:
-            return pd.Series([0.0] * len(data), index=data.index)
+            return pd.Series([pd.NA] * len(data), index=data.index)
 
         values = data[column].astype(str).str.replace(",", ".", regex=False)
-        values = values.str.replace("^\\s*$", "0", regex=True)
-        return pd.to_numeric(values, errors="coerce").fillna(0.0)
+        values = values.str.replace("^\\s*$", "", regex=True)
+        return pd.to_numeric(values, errors="coerce")
 
     def _build_datetime(
         self,

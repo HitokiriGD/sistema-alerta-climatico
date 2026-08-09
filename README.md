@@ -21,6 +21,7 @@ src/ml/              Criacao, treinamento e avaliacao de modelos
 src/utils/           Utilitarios compartilhados
 data/raw/            Dados brutos locais
 data/processed/      Dados tratados locais
+scripts/             Scripts operacionais locais
 docs/                Documentacao do projeto
 notebooks/           Experimentos academicos
 tests/               Testes automatizados basicos
@@ -66,6 +67,7 @@ OPENWEATHER_BASE_URL=https://api.openweathermap.org/data/2.5
 INMET_HISTORICAL_ZIP_DIR=data/raw/inmet/zips
 INMET_HISTORICAL_START_YEAR=2020
 INMET_HISTORICAL_END_YEAR=2026
+INMET_PROCESSED_DATA_PATH=data/processed/inmet_hourly.parquet
 ```
 
 Para executar somente o prototipo local com entrada manual de dados, a chave de
@@ -97,7 +99,50 @@ carregar muitos anos de dados. Esse intervalo pode ser alterado no `.env` ou
 nos campos da secao historica do dashboard.
 
 Os dados brutos nao sao versionados no GitHub. A pasta `data/raw/`, arquivos
-`*.zip` e arquivos `*.har` ficam ignorados pelo Git.
+`*.zip` e arquivos `*.har` ficam ignorados pelo Git. Ela deve conter os ZIPs
+baixados localmente e outros insumos originais que podem ser recriados.
+
+A pasta `data/processed/` armazena datasets tratados gerados localmente pelo
+pipeline de pre-tratamento. Arquivos grandes como `*.parquet` e `*.csv` nessa
+pasta tambem ficam ignorados pelo Git; apenas a estrutura da pasta e mantida no
+repositorio.
+
+## Pre-tratamento dos Dados
+
+A etapa de pre-tratamento centraliza a preparacao dos dados meteorologicos em
+`src/processing/preprocessing.py`. O pipeline:
+
+- padroniza nomes de colunas meteorologicas;
+- converte numeros com virgula decimal para `float`;
+- valida colunas obrigatorias;
+- aplica limites plausiveis para temperatura, sensacao termica, umidade,
+  precipitacao, vento e pressao;
+- remove registros sem `datetime` ou sem `temperature`;
+- preserva registros parcialmente uteis com a coluna `quality_flag`;
+- ordena os dados por `datetime`;
+- remove duplicidades por `station_code` e `datetime`, quando houver estacao.
+
+Para gerar a base historica tratada do INMET a partir dos ZIPs locais, execute:
+
+```powershell
+python scripts\build_inmet_dataset.py --station A001 --start-year 2020 --end-year 2026
+```
+
+Por padrao, o arquivo tratado e salvo em:
+
+```text
+data/processed/inmet_hourly.parquet
+```
+
+Se o ambiente nao tiver uma dependencia de parquet instalada, o script salva
+automaticamente em:
+
+```text
+data/processed/inmet_hourly.csv
+```
+
+Esse dataset tratado sera usado nas proximas etapas para comparacao historica e
+futura modelagem com aprendizado de maquina.
 
 ## Instalacao
 
