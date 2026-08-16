@@ -11,6 +11,8 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
     monkeypatch.delenv("INMET_HISTORICAL_END_YEAR", raising=False)
     monkeypatch.delenv("INMET_PROCESSED_DATA_PATH", raising=False)
     monkeypatch.delenv("INMET_STATION_CATALOG_PATH", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_PATH", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_URL", raising=False)
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -26,6 +28,8 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
         settings.inmet_station_catalog_path
         == "data/processed/inmet_station_catalog.csv"
     )
+    assert settings.inmet_database_path == "data/processed/inmet_historical.duckdb"
+    assert settings.inmet_database_url == ""
 
 
 def test_load_settings_reads_environment_variables(monkeypatch) -> None:
@@ -41,6 +45,14 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
         "INMET_STATION_CATALOG_PATH",
         "data/processed/catalogo.csv",
     )
+    monkeypatch.setenv(
+        "INMET_DATABASE_PATH",
+        "data/processed/teste.duckdb",
+    )
+    monkeypatch.setenv(
+        "INMET_DATABASE_URL",
+        "https://example.test/inmet_historical.duckdb",
+    )
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -53,3 +65,5 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     assert settings.inmet_historical_end_year == 2022
     assert settings.inmet_processed_data_path == "data/processed/teste.csv"
     assert settings.inmet_station_catalog_path == "data/processed/catalogo.csv"
+    assert settings.inmet_database_path == "data/processed/teste.duckdb"
+    assert settings.inmet_database_url == "https://example.test/inmet_historical.duckdb"

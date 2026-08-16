@@ -17,6 +17,8 @@ class Settings:
     inmet_historical_end_year: int
     inmet_processed_data_path: str
     inmet_station_catalog_path: str
+    inmet_database_path: str
+    inmet_database_url: str
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -50,4 +52,9 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
             "INMET_STATION_CATALOG_PATH",
             "data/processed/inmet_station_catalog.csv",
         ),
+        inmet_database_path=os.getenv(
+            "INMET_DATABASE_PATH",
+            "data/processed/inmet_historical.duckdb",
+        ),
+        inmet_database_url=os.getenv("INMET_DATABASE_URL", ""),
     )

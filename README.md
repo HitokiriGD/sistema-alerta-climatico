@@ -44,6 +44,7 @@ Fluxo esperado:
 - Scikit-Learn
 - XGBoost
 - Streamlit
+- DuckDB
 - Requests
 - Python Dotenv
 - Pytest
@@ -69,6 +70,8 @@ INMET_HISTORICAL_START_YEAR=2020
 INMET_HISTORICAL_END_YEAR=2026
 INMET_PROCESSED_DATA_PATH=data/processed/inmet_hourly.parquet
 INMET_STATION_CATALOG_PATH=data/processed/inmet_station_catalog.csv
+INMET_DATABASE_PATH=data/processed/inmet_historical.duckdb
+INMET_DATABASE_URL=
 ```
 
 Para executar somente o prototipo local com entrada manual de dados, a chave de
@@ -107,6 +110,17 @@ A pasta `data/processed/` armazena datasets tratados gerados localmente pelo
 pipeline de pre-tratamento. Arquivos grandes como `*.parquet` e `*.csv` nessa
 pasta tambem ficam ignorados pelo Git; apenas a estrutura da pasta e mantida no
 repositorio.
+
+O fluxo historico pode usar duas formas de dados:
+
+- ZIPs brutos do INMET em `data/raw/inmet/zips/`: usados para gerar bases
+  locais e como fallback quando nao existe banco processado.
+- Banco processado DuckDB em `data/processed/inmet_historical.duckdb`: usado
+  preferencialmente pelo dashboard por permitir consulta filtrada por estacao e
+  intervalo de anos, sem carregar todo o historico nacional na memoria.
+
+O arquivo DuckDB tambem nao e versionado no Git. Ele pode ser gerado localmente
+ou distribuido por fora do repositorio, por exemplo em GitHub Releases.
 
 O INMET historico pode ser consultado por um seletor pesquisavel de estacao no
 dashboard. O sistema resolve internamente o codigo da estacao usando um
@@ -158,6 +172,41 @@ data/processed/inmet_station_catalog.csv
 
 Esse catalogo e derivado dos nomes/metadados dos CSVs nos ZIPs e nao e
 versionado no Git.
+
+### Base historica processada em DuckDB
+
+Para gerar a base historica processada a partir dos ZIPs locais, execute:
+
+```powershell
+python scripts\build_inmet_duckdb.py --start-year 2000 --end-year 2026
+```
+
+Para gerar apenas algumas estacoes, informe os codigos separados por virgula:
+
+```powershell
+python scripts\build_inmet_duckdb.py --start-year 2000 --end-year 2026 --stations A001,A101,A312
+```
+
+Por padrao, a base e salva em:
+
+```text
+data/processed/inmet_historical.duckdb
+```
+
+O dashboard verifica `INMET_DATABASE_PATH`. Se o DuckDB existir, ele usa a base
+processada como fonte principal e consulta apenas `station_code` e intervalo de
+anos selecionados. Se o DuckDB nao existir, o dashboard continua usando os
+ZIPs locais como fallback.
+
+Para baixar uma base pronta, configure `INMET_DATABASE_URL` no `.env` e execute:
+
+```powershell
+python scripts\download_inmet_database.py
+```
+
+A URL real nao e obrigatoria no prototipo. A estrutura existe para permitir
+distribuir o arquivo processado por GitHub Releases ou outro armazenamento
+publico sem commitar o DuckDB no repositorio.
 
 ## Pre-tratamento dos Dados
 
@@ -224,6 +273,60 @@ substituem alertas oficiais de defesa civil ou de orgaos meteorologicos. O
 INMET historico continua separado como base de consulta, comparacao e futura
 modelagem; ele nao gera alerta atual sozinho nesta etapa.
 
+## Comparacao Historica no Dashboard
+
+O dashboard tambem exibe a secao `Comparacao com historico INMET`. Ela usa os
+dados atuais carregados por `Entrada manual` ou `OpenWeather` e compara esses
+valores com a serie historica de uma estacao INMET.
+
+No modo `OpenWeather`, o fluxo principal e automatico: informe a cidade uma
+vez, clique em `Buscar dados atuais` e o sistema tenta associar a estacao INMET
+mais adequada. Primeiro ele usa latitude e longitude retornadas pela
+OpenWeather para escolher a estacao mais proxima no catalogo local do INMET. Se
+as coordenadas nao estiverem disponiveis, tenta encontrar uma estacao pelo nome
+da cidade. Em seguida carrega o historico da estacao e executa o
+`HistoricalAnalyzer`.
+
+Na tela, o sistema mostra o fluxo executado:
+
+- dados atuais obtidos via OpenWeather;
+- estacao INMET associada automaticamente;
+- historico INMET carregado para comparacao;
+- analise historica executada.
+
+A estacao manual continua disponivel em `Opcao avancada: alterar estacao INMET
+manualmente`. Ela serve para corrigir a associacao automatica ou para escolher
+outra estacao de referencia.
+
+No modo `Entrada manual`, nao ha coordenadas automaticas da cidade. Por isso, o
+dashboard solicita a estacao INMET de referencia para comparacao historica. O
+historico e carregado automaticamente apos a selecao.
+
+O app mostra nome da estacao, UF, codigo, altitude quando disponivel, distancia
+aproximada ate a cidade atual quando a associacao usa coordenadas, periodo
+carregado e quantidade de registros. Quando ha dados atuais e historico, o
+`HistoricalAnalyzer` calcula anomalias estatisticas e exibe:
+
+- anomalias historicas identificadas, com tipo, severidade, valor atual,
+  referencia historica e justificativa;
+- resumo por variavel com valor atual, media historica, percentil usado e
+  interpretacao;
+- detalhes tecnicos da pressao atmosferica em um expander.
+
+Essa comparacao historica complementa o alerta principal por regras. Ela ajuda
+a explicar se o dado atual esta fora do padrao observado para a estacao, mas
+ainda nao e Machine Learning e nao substitui o classificador por regras nem
+alertas oficiais.
+
+A pressao segue o mesmo cuidado de referencial descrito acima: o historico do
+INMET usa pressao ao nivel da estacao. Quando a OpenWeather fornece
+`grnd_level`, o sistema usa esse valor como `pressure_station_hpa`; quando nao
+fornece, o sistema estima a pressao ao nivel da estacao com a altitude da
+estacao INMET. A tela de detalhes mostra a pressao ao nivel do mar, quando
+existir, e a pressao de estacao usada na comparacao. Assim, a comparacao nao
+usa diretamente a pressao ao nivel do mar contra a pressao historica da
+estacao.
+
 ## Instalacao
 
 ```powershell
@@ -244,12 +347,12 @@ No dashboard, escolha a fonte dos dados na barra lateral:
 - `OpenWeather`: busca dados meteorologicos atuais pela cidade informada usando
   a chave configurada no `.env`.
 
-A secao `Base historica INMET` fica separada dos dados atuais. Selecione uma
-estacao no campo pesquisavel, como `MANAUS - AM | A101`, informe o intervalo
-de anos e carregue os ZIPs locais para visualizar o periodo disponivel, a
-quantidade de registros e medias historicas. Tambem ha uma opcao avancada para
-informar manualmente o codigo da estacao, como `A001`. Esses dados historicos
-nao geram alerta climatico diretamente nesta etapa.
+A secao `Comparacao com historico INMET` fica abaixo dos dados atuais e do
+alerta por regras. No modo `OpenWeather`, digite uma cidade, como `Manaus`, e
+clique em `Buscar dados atuais`; o sistema tentara associar automaticamente
+uma estacao como `MANAUS - AM | A101` ou a mais proxima pelas coordenadas. No
+modo `Entrada manual`, selecione a estacao de referencia na secao historica.
+Esses dados historicos nao geram alerta climatico diretamente nesta etapa.
 
 ## Testes
 
