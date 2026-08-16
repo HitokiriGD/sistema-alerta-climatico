@@ -661,7 +661,15 @@ def show_inmet_historical_section(
             f"registros: {metadata['record_count']}."
         )
     else:
-        st.info("Base processada nao encontrada; usando ZIPs locais.")
+        st.info(
+            "Base historica processada nao encontrada. "
+            "Execute: python scripts/download_inmet_database.py"
+        )
+        st.caption(
+            "O arquivo DuckDB pronto tem aproximadamente 428 MB. "
+            "Enquanto ele nao existir, o dashboard usa ZIPs locais como "
+            "fallback quando disponiveis."
+        )
 
     selected_station, station_message = _select_station_for_historical_flow(
         data_source,

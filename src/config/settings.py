@@ -19,6 +19,11 @@ class Settings:
     inmet_station_catalog_path: str
     inmet_database_path: str
     inmet_database_url: str
+    inmet_database_release_repo: str
+    inmet_database_release_tag: str
+    inmet_database_asset_name: str
+    inmet_database_sha256: str
+    github_token: str
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -57,4 +62,21 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
             "data/processed/inmet_historical.duckdb",
         ),
         inmet_database_url=os.getenv("INMET_DATABASE_URL", ""),
+        inmet_database_release_repo=os.getenv(
+            "INMET_DATABASE_RELEASE_REPO",
+            "HitokiriGD/sistema-alerta-climatico",
+        ),
+        inmet_database_release_tag=os.getenv(
+            "INMET_DATABASE_RELEASE_TAG",
+            "inmet-db-v1",
+        ),
+        inmet_database_asset_name=os.getenv(
+            "INMET_DATABASE_ASSET_NAME",
+            "inmet_historical.duckdb",
+        ),
+        inmet_database_sha256=os.getenv(
+            "INMET_DATABASE_SHA256",
+            "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe",
+        ),
+        github_token=os.getenv("GITHUB_TOKEN", ""),
     )

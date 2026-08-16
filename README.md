@@ -72,6 +72,11 @@ INMET_PROCESSED_DATA_PATH=data/processed/inmet_hourly.parquet
 INMET_STATION_CATALOG_PATH=data/processed/inmet_station_catalog.csv
 INMET_DATABASE_PATH=data/processed/inmet_historical.duckdb
 INMET_DATABASE_URL=
+INMET_DATABASE_RELEASE_REPO=HitokiriGD/sistema-alerta-climatico
+INMET_DATABASE_RELEASE_TAG=inmet-db-v1
+INMET_DATABASE_ASSET_NAME=inmet_historical.duckdb
+INMET_DATABASE_SHA256=2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe
+GITHUB_TOKEN=
 ```
 
 Para executar somente o prototipo local com entrada manual de dados, a chave de
@@ -198,15 +203,48 @@ processada como fonte principal e consulta apenas `station_code` e intervalo de
 anos selecionados. Se o DuckDB nao existir, o dashboard continua usando os
 ZIPs locais como fallback.
 
-Para baixar uma base pronta, configure `INMET_DATABASE_URL` no `.env` e execute:
+Para baixar a base pronta publicada em GitHub Release, execute:
 
 ```powershell
 python scripts\download_inmet_database.py
 ```
 
-A URL real nao e obrigatoria no prototipo. A estrutura existe para permitir
-distribuir o arquivo processado por GitHub Releases ou outro armazenamento
-publico sem commitar o DuckDB no repositorio.
+Por padrao, o script usa a release:
+
+```text
+HitokiriGD/sistema-alerta-climatico | tag inmet-db-v1 | inmet_historical.duckdb
+```
+
+Se `INMET_DATABASE_URL` estiver preenchida, essa URL direta tem prioridade.
+Caso contrario, o script consulta a API do GitHub, localiza o asset configurado
+por `INMET_DATABASE_ASSET_NAME` e baixa o arquivo para `INMET_DATABASE_PATH`.
+O download e feito primeiro para `data/processed/inmet_historical.duckdb.tmp`
+e so depois o arquivo final e substituido.
+
+Se o arquivo final ja existir, o script nao baixa novamente. Para forcar novo
+download:
+
+```powershell
+python scripts\download_inmet_database.py --force
+```
+
+O hash SHA256 e validado quando `INMET_DATABASE_SHA256` estiver configurado.
+O valor padrao corresponde ao asset `inmet_historical.duckdb` da release
+`inmet-db-v1`.
+
+Em repositorio privado, pode ser necessario configurar um token do GitHub:
+
+```env
+GITHUB_TOKEN=seu_token_aqui
+```
+
+Crie o token em GitHub -> Settings -> Developer settings -> Personal access
+tokens, com permissao de leitura no repositorio. O token e lido pelo `.env` e
+nao deve ser impresso no terminal nem versionado no Git.
+
+Como alternativa ao download, gere a base localmente a partir dos ZIPs do INMET
+com `scripts\build_inmet_duckdb.py`. O arquivo DuckDB nao e versionado no Git;
+ele pode ser recriado localmente ou distribuido por GitHub Releases.
 
 ## Pre-tratamento dos Dados
 
