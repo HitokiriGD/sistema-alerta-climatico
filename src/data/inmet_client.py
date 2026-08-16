@@ -23,6 +23,7 @@ STANDARD_COLUMNS = [
     "precipitation",
     "wind_speed",
     "pressure",
+    "altitude_m",
     "source",
 ]
 STATION_CATALOG_COLUMNS = [
@@ -36,6 +37,7 @@ STATION_CATALOG_COLUMNS = [
     "latitude",
     "longitude",
     "altitude",
+    "altitude_m",
     "first_available_year",
     "last_available_year",
     "station_label",
@@ -227,6 +229,7 @@ class InmetClient:
                         "latitude": self._decimal_text_to_float(metadata["latitude"]),
                         "longitude": self._decimal_text_to_float(metadata["longitude"]),
                         "altitude": self._decimal_text_to_float(metadata["altitude"]),
+                        "altitude_m": self._decimal_text_to_float(metadata["altitude"]),
                         "first_available_year": year,
                         "last_available_year": year,
                         "station_label": "",
@@ -362,6 +365,9 @@ class InmetClient:
         normalized_data["precipitation"] = self._numeric_column(data, "precipitation")
         normalized_data["wind_speed"] = self._numeric_column(data, "wind_speed") * 3.6
         normalized_data["pressure"] = self._numeric_column(data, "pressure")
+        normalized_data["altitude_m"] = self._decimal_text_to_float(
+            metadata.get("altitude", "")
+        )
         normalized_data["source"] = HISTORICAL_SOURCE_NAME
 
         return normalized_data[STANDARD_COLUMNS]
