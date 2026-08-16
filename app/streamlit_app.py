@@ -19,10 +19,12 @@ STANDARD_WEATHER_FIELDS = [
     "precipitation",
     "wind_speed",
     "pressure",
+    "pressure_sea_level_hpa",
+    "pressure_station_hpa",
 ]
 
 
-def build_manual_weather_data() -> dict[str, float]:
+def build_manual_weather_data() -> dict[str, object]:
     """Coleta dados meteorologicos informados manualmente no dashboard."""
     temperature = st.number_input("Temperatura (C)", value=28.0, step=0.5)
     feels_like = st.number_input("Sensacao termica (C)", value=29.0, step=0.5)
@@ -55,10 +57,12 @@ def build_manual_weather_data() -> dict[str, float]:
         "precipitation": precipitation,
         "wind_speed": wind_speed,
         "pressure": pressure,
+        "pressure_station_hpa": pressure,
+        "pressure_reference": "manual_station_level",
     }
 
 
-def build_openweather_weather_data(settings: Settings) -> dict[str, float] | None:
+def build_openweather_weather_data(settings: Settings) -> dict[str, object] | None:
     """Coleta dados meteorologicos atuais usando a OpenWeather."""
     city = st.text_input("Cidade", value=settings.default_city)
 
@@ -102,13 +106,24 @@ def build_openweather_weather_data(settings: Settings) -> dict[str, float] | Non
     return None
 
 
-def show_weather_data(weather_data: dict[str, float]) -> None:
+def show_weather_data(weather_data: dict[str, object]) -> None:
     """Exibe os campos meteorologicos padronizados no dashboard."""
     ordered_data = {
-        field: weather_data.get(field, 0.0)
+        field: weather_data.get(field)
         for field in STANDARD_WEATHER_FIELDS
     }
     st.dataframe(pd.DataFrame([ordered_data]), width="stretch")
+    if weather_data.get("pressure_reference") == "openweather_grnd_level":
+        st.caption(
+            "Pressao atual para comparacao historica: pressao ao nivel da "
+            "estacao informada por grnd_level da OpenWeather."
+        )
+    elif "pressure_sea_level_hpa" in weather_data:
+        st.caption(
+            "A pressao principal da OpenWeather e ao nivel do mar. Para "
+            "comparacao com o INMET historico, o sistema usa grnd_level quando "
+            "disponivel ou estima a pressao ao nivel da estacao pela altitude."
+        )
 
 
 def show_weather_risk(risk: WeatherRisk) -> None:
@@ -200,6 +215,11 @@ def show_inmet_historical_section(settings: Settings) -> None:
         st.write(f"Estacao selecionada: {station_label}")
         st.write(f"Codigo da estacao: {selected_station['station_code']}")
         st.write(f"UF: {selected_station['state']}")
+        altitude_m = selected_station.get("altitude_m") or selected_station.get(
+            "altitude"
+        )
+        if altitude_m is not None and pd.notna(altitude_m):
+            st.write(f"Altitude da estacao: {float(altitude_m):.1f} m")
 
     if not st.button("Carregar historico INMET"):
         st.info("Selecione uma estacao e carregue a base historica local do INMET.")
@@ -243,6 +263,11 @@ def show_inmet_historical_section(settings: Settings) -> None:
     metric_columns[4].metric(
         "Precipitacao media",
         f"{averages['precipitation']:.1f} mm",
+    )
+    st.caption(
+        "A pressao historica do INMET esta ao nivel da estacao. Comparacoes "
+        "com OpenWeather devem usar grnd_level ou pressao estimada ao nivel da "
+        "estacao pela altitude."
     )
 
 

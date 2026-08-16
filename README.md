@@ -115,6 +115,30 @@ brutos do INMET, complementando latitude, longitude e altitude com metadados
 quando disponiveis. Por exemplo, as opcoes aparecem como `MANAUS - AM | A101`
 e `BRASILIA - DF | A001`, quando essas estacoes existirem nos ZIPs locais.
 
+### Pressao atmosferica na comparacao historica
+
+A pressao da OpenWeather em `main.pressure` representa a pressao ao nivel do
+mar. Esse valor e preservado no sistema como `pressure_sea_level_hpa` e tambem
+permanece no campo legado `pressure` para compatibilidade com partes antigas
+do prototipo.
+
+O historico do INMET usa pressao atmosferica ao nivel da estacao. Por isso, a
+comparacao historica nao compara diretamente `main.pressure` da OpenWeather
+com a coluna `pressure` do INMET. Quando a OpenWeather retorna `main.grnd_level`,
+o sistema usa esse valor diretamente como `pressure_station_hpa`.
+
+Quando `main.grnd_level` nao esta disponivel, o sistema estima
+`pressure_station_hpa` a partir de `pressure_sea_level_hpa` e da altitude da
+estacao INMET em metros, vinda do catalogo local de estacoes:
+
+```text
+pressure_station_hpa = pressure_sea_level_hpa * (1 - 0.0065 * altitude_m / 288.15) ** 5.255
+```
+
+Se nao houver `grnd_level` nem altitude da estacao, a pressao fica marcada como
+nao avaliada na analise historica. Isso evita falso positivo por comparar
+pressao ao nivel do mar com pressao ao nivel da estacao.
+
 O dataset tratado em `data/processed/inmet_hourly.parquet` nao e usado para
 descobrir estacoes, pois ele pode ter sido gerado apenas para uma unica
 estacao. A descoberta do catalogo sempre parte dos ZIPs brutos em
