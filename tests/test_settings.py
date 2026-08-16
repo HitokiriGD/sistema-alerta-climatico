@@ -13,6 +13,11 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
     monkeypatch.delenv("INMET_STATION_CATALOG_PATH", raising=False)
     monkeypatch.delenv("INMET_DATABASE_PATH", raising=False)
     monkeypatch.delenv("INMET_DATABASE_URL", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_RELEASE_REPO", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_RELEASE_TAG", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_ASSET_NAME", raising=False)
+    monkeypatch.delenv("INMET_DATABASE_SHA256", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -30,6 +35,17 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
     )
     assert settings.inmet_database_path == "data/processed/inmet_historical.duckdb"
     assert settings.inmet_database_url == ""
+    assert (
+        settings.inmet_database_release_repo
+        == "HitokiriGD/sistema-alerta-climatico"
+    )
+    assert settings.inmet_database_release_tag == "inmet-db-v1"
+    assert settings.inmet_database_asset_name == "inmet_historical.duckdb"
+    assert (
+        settings.inmet_database_sha256
+        == "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe"
+    )
+    assert settings.github_token == ""
 
 
 def test_load_settings_reads_environment_variables(monkeypatch) -> None:
@@ -53,6 +69,14 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
         "INMET_DATABASE_URL",
         "https://example.test/inmet_historical.duckdb",
     )
+    monkeypatch.setenv(
+        "INMET_DATABASE_RELEASE_REPO",
+        "owner/repo",
+    )
+    monkeypatch.setenv("INMET_DATABASE_RELEASE_TAG", "db-v2")
+    monkeypatch.setenv("INMET_DATABASE_ASSET_NAME", "test.duckdb")
+    monkeypatch.setenv("INMET_DATABASE_SHA256", "abc123")
+    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -67,3 +91,8 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     assert settings.inmet_station_catalog_path == "data/processed/catalogo.csv"
     assert settings.inmet_database_path == "data/processed/teste.duckdb"
     assert settings.inmet_database_url == "https://example.test/inmet_historical.duckdb"
+    assert settings.inmet_database_release_repo == "owner/repo"
+    assert settings.inmet_database_release_tag == "db-v2"
+    assert settings.inmet_database_asset_name == "test.duckdb"
+    assert settings.inmet_database_sha256 == "abc123"
+    assert settings.github_token == "secret-token"
