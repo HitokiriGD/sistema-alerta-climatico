@@ -25,6 +25,8 @@ def make_settings(zip_dir: Path) -> Settings:
     settings.inmet_historical_end_year = 2026
     settings.inmet_processed_data_path = "data/processed/inmet_hourly.parquet"
     settings.inmet_station_catalog_path = "data/processed/inmet_station_catalog.csv"
+    settings.inmet_database_path = "data/processed/inmet_historical.duckdb"
+    settings.inmet_database_url = ""
     return settings
 
 
@@ -135,6 +137,9 @@ def test_load_station_history_normalizes_decimal_and_wind_speed(tmp_path):
     assert history.loc[1, "precipitation"] == 1.5
     assert history.loc[1, "wind_speed"] == 9.0
     assert history.loc[1, "pressure"] == 888.1
+    assert history.loc[1, "latitude"] == -15.78944444
+    assert history.loc[1, "longitude"] == -47.92583332
+    assert history.loc[1, "altitude_m"] == 1160.96
     assert pd.isna(history.loc[1, "feels_like"])
 
 
@@ -225,6 +230,7 @@ def test_build_station_catalog_from_zip_names_and_metadata(tmp_path):
     assert catalog.loc[0, "state"] == "DF"
     assert catalog.loc[0, "region"] == "CO"
     assert catalog.loc[0, "latitude"] == -15.78944444
+    assert catalog.loc[0, "altitude_m"] == 1160.96
     assert catalog.loc[0, "station_label"] == "BRASILIA - DF | A001"
 
 

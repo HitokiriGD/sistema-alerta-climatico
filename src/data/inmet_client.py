@@ -14,6 +14,9 @@ STANDARD_COLUMNS = [
     "station_code",
     "station_name",
     "state",
+    "latitude",
+    "longitude",
+    "altitude_m",
     "date",
     "hour",
     "datetime",
@@ -23,7 +26,6 @@ STANDARD_COLUMNS = [
     "precipitation",
     "wind_speed",
     "pressure",
-    "altitude_m",
     "source",
 ]
 STATION_CATALOG_COLUMNS = [
@@ -353,6 +355,15 @@ class InmetClient:
         normalized_data["station_code"] = metadata["station_code"]
         normalized_data["station_name"] = metadata["station_name"]
         normalized_data["state"] = metadata["state"]
+        normalized_data["latitude"] = self._decimal_text_to_float(
+            metadata.get("latitude", "")
+        )
+        normalized_data["longitude"] = self._decimal_text_to_float(
+            metadata.get("longitude", "")
+        )
+        normalized_data["altitude_m"] = self._decimal_text_to_float(
+            metadata.get("altitude", "")
+        )
         normalized_data["date"] = data.get("Data")
         normalized_data["hour"] = data.get("Hora UTC")
         normalized_data["datetime"] = self._build_datetime(
@@ -365,9 +376,6 @@ class InmetClient:
         normalized_data["precipitation"] = self._numeric_column(data, "precipitation")
         normalized_data["wind_speed"] = self._numeric_column(data, "wind_speed") * 3.6
         normalized_data["pressure"] = self._numeric_column(data, "pressure")
-        normalized_data["altitude_m"] = self._decimal_text_to_float(
-            metadata.get("altitude", "")
-        )
         normalized_data["source"] = HISTORICAL_SOURCE_NAME
 
         return normalized_data[STANDARD_COLUMNS]

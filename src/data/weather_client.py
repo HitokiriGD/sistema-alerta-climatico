@@ -40,4 +40,11 @@ def normalize_weather_payload(payload: dict[str, Any]) -> dict[str, Any]:
         weather_data["pressure_station_hpa"] = pressure_station_hpa
         weather_data["pressure_reference"] = "openweather_grnd_level"
 
+    coord = payload.get("coord", {})
+    if coord.get("lat") is not None and coord.get("lon") is not None:
+        weather_data["latitude"] = float(coord["lat"])
+        weather_data["longitude"] = float(coord["lon"])
+    if payload.get("name"):
+        weather_data["city"] = str(payload["name"])
+
     return weather_data

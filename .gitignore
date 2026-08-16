@@ -12,3 +12,4 @@ data/processed/*.csv
 .DS_Store
 *.zip
 *.har
+*.duckdb
