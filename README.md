@@ -411,6 +411,61 @@ estacoes, distribuicao por `risk_level`, distribuicao por `event_type` e caminho
 salvo. O dataset gerado nao e versionado no Git; arquivos `*.parquet` e `*.csv`
 em `data/processed/` permanecem ignorados.
 
+## Treinamento dos Modelos de Machine Learning
+
+A etapa de treinamento usa o dataset rotulado gerado a partir do INMET DuckDB.
+O alvo inicial e `risk_level`, com as classes `baixo`, `moderado`, `alto` e
+`critico`. A coluna `event_type` permanece no dataset para analises futuras,
+mas ainda nao e usada como alvo principal.
+
+Os rotulos vieram do `RiskClassifier`, ou seja, de regras tecnicas explicaveis.
+Isso cria uma base supervisionada inicial para comparar modelos, mantendo a
+rastreabilidade entre regra, rotulo e resultado do treinamento.
+
+Os modelos treinados nesta etapa sao:
+
+- Regressao Logistica, como baseline interpretavel;
+- Random Forest, para capturar relacoes nao lineares simples;
+- XGBoost, para avaliar um modelo de boosting supervisionado.
+
+Como eventos severos e criticos tendem a ser raros, o dataset e desbalanceado.
+Por isso, a acuracia sozinha nao e suficiente para avaliar o modelo: um modelo
+que acerta muitos casos `baixo` pode ainda falhar nos eventos mais importantes.
+As metricas `f1_macro` e `recall_macro` recebem destaque porque consideram as
+classes de forma mais equilibrada e ajudam a enxergar desempenho em classes
+minoritarias.
+
+Fluxo recomendado:
+
+```powershell
+python scripts\build_ml_dataset.py --start-year 2020 --end-year 2026 --stations A001,A101,A312
+python scripts\train_ml_models.py
+```
+
+O treinamento usa por padrao:
+
+```text
+data/processed/ml_training_dataset.parquet
+```
+
+O melhor modelo e salvo em:
+
+```text
+data/models/risk_level_model.joblib
+```
+
+Os metadados e relatorios sao salvos em:
+
+```text
+data/models/risk_level_model_metadata.json
+data/reports/risk_level_training_report.json
+data/reports/risk_level_confusion_matrix.csv
+```
+
+A selecao do melhor modelo usa `f1_macro` por padrao. Os diretorios
+`data/models/` e `data/reports/`, os modelos `*.joblib` e os datasets gerados
+nao sao versionados no Git.
+
 ## Classificador por Regras
 
 A etapa atual implementa um classificador inicial por regras em
