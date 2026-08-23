@@ -317,20 +317,25 @@ O dashboard tambem exibe a secao `Comparacao com historico INMET`. Ela usa os
 dados atuais carregados por `Entrada manual` ou `OpenWeather` e compara esses
 valores com a serie historica de uma estacao INMET.
 
-No modo `OpenWeather`, o fluxo principal e automatico: informe a cidade uma
-vez, clique em `Buscar dados atuais` e o sistema tenta associar a estacao INMET
-mais adequada. Primeiro ele usa latitude e longitude retornadas pela
-OpenWeather para escolher a estacao mais proxima no catalogo local do INMET. Se
-as coordenadas nao estiverem disponiveis, tenta encontrar uma estacao pelo nome
-da cidade. Em seguida carrega o historico da estacao e executa o
-`HistoricalAnalyzer`.
+No modo `OpenWeather`, o fluxo principal parte de um formulario unico no topo
+da tela. Informe cidade, pais, ano inicial e ano final do historico antes de
+clicar em `Buscar dados e comparar com historico`. O dashboard so busca dados
+atuais e historicos depois desse clique, usando exatamente o periodo escolhido.
+Em seguida, o sistema tenta associar a estacao INMET mais adequada. Primeiro
+ele usa latitude e longitude retornadas pela OpenWeather para escolher a estacao
+mais proxima no catalogo local do INMET. Se as coordenadas nao estiverem
+disponiveis, tenta encontrar uma estacao pelo nome da cidade. Depois carrega o
+historico da estacao no intervalo selecionado e executa o `HistoricalAnalyzer`.
 
 Na tela, o sistema mostra o fluxo executado:
 
 - dados atuais obtidos via OpenWeather;
+- cidade, pais e periodo historico usados na consulta;
 - estacao INMET associada automaticamente;
-- historico INMET carregado para comparacao;
-- analise historica executada.
+- fonte historica usada, priorizando DuckDB e usando ZIPs locais como fallback;
+- alerta atual por regras explicaveis;
+- comparacao estatistica com o historico INMET;
+- resumo interpretativo final em linguagem simples.
 
 A estacao manual continua disponivel em `Opcao avancada: alterar estacao INMET
 manualmente`. Ela serve para corrigir a associacao automatica ou para escolher
@@ -342,13 +347,14 @@ historico e carregado automaticamente apos a selecao.
 
 O app mostra nome da estacao, UF, codigo, altitude quando disponivel, distancia
 aproximada ate a cidade atual quando a associacao usa coordenadas, periodo
-carregado e quantidade de registros. Quando ha dados atuais e historico, o
-`HistoricalAnalyzer` calcula anomalias estatisticas e exibe:
+carregado, quantidade de registros e fonte usada (`DuckDB` ou `ZIPs locais`).
+Quando ha dados atuais e historico, o `HistoricalAnalyzer` calcula anomalias
+estatisticas e exibe:
 
 - anomalias historicas identificadas, com tipo, severidade, valor atual,
   referencia historica e justificativa;
-- resumo por variavel com valor atual, media historica, percentil usado e
-  interpretacao;
+- resumo interpretativo com a leitura final da condicao atual;
+- percentis e estatisticas historicas em expander tecnico;
 - detalhes tecnicos da pressao atmosferica em um expander.
 
 Essa comparacao historica complementa o alerta principal por regras. Ela ajuda
@@ -365,6 +371,23 @@ existir, e a pressao de estacao usada na comparacao. Assim, a comparacao nao
 usa diretamente a pressao ao nivel do mar contra a pressao historica da
 estacao.
 
+### Demonstracao do Dashboard
+
+Roteiro curto para apresentacao do TCC:
+
+1. Abrir o dashboard e apresentar o objetivo: dado atual por cidade,
+   comparacao com historico INMET e alerta inicial por regras.
+2. Explicar as fontes: OpenWeather como dado atual e INMET como base historica.
+3. Informar uma cidade, por exemplo `Manaus`, selecionar o periodo historico,
+   por exemplo `2025` a `2026`, e clicar em `Buscar dados e comparar com
+   historico`.
+4. Mostrar os dados atuais, a estacao INMET associada e a fonte historica usada.
+5. Apresentar o alerta atual por regras, com justificativa e recomendacoes.
+6. Abrir os expanders apenas se a banca pedir detalhes de variaveis, percentis,
+   pressao normalizada ou regras acionadas.
+7. Fechar com o `Resumo interpretativo`, reforcando que a etapa atual ainda nao
+   e Machine Learning; os modelos supervisionados sao etapa posterior.
+
 ## Instalacao
 
 ```powershell
@@ -379,18 +402,25 @@ python -m pip install -r requirements.txt
 streamlit run app\streamlit_app.py
 ```
 
-No dashboard, escolha a fonte dos dados na barra lateral:
+No dashboard, use o formulario principal:
 
-- `Entrada manual`: usa os valores preenchidos diretamente na tela.
-- `OpenWeather`: busca dados meteorologicos atuais pela cidade informada usando
-  a chave configurada no `.env`.
+- `Cidade`: cidade consultada na OpenWeather.
+- `Pais`: codigo do pais, como `BR`.
+- `Ano inicial do historico`: inicio do intervalo INMET.
+- `Ano final do historico`: fim do intervalo INMET.
+- `Fonte dos dados atuais`: `OpenWeather` por padrao ou `Entrada manual` como
+  opcao secundaria.
 
-A secao `Comparacao com historico INMET` fica abaixo dos dados atuais e do
-alerta por regras. No modo `OpenWeather`, digite uma cidade, como `Manaus`, e
-clique em `Buscar dados atuais`; o sistema tentara associar automaticamente
-uma estacao como `MANAUS - AM | A101` ou a mais proxima pelas coordenadas. No
-modo `Entrada manual`, selecione a estacao de referencia na secao historica.
-Esses dados historicos nao geram alerta climatico diretamente nesta etapa.
+O dashboard nao carrega historico antes do clique no botao. Se o usuario buscar
+`Manaus` com periodo `2025` a `2026`, a consulta ao DuckDB ou aos ZIPs locais
+usara esse intervalo. Se buscar `2019` a `2026`, o historico sera recarregado
+com esse novo periodo. Se o ano inicial for maior que o ano final, o app mostra
+um erro amigavel e nao executa a busca.
+
+Na tela principal, os detalhes tecnicos ficam em expanders: variaveis brutas,
+regras acionadas, percentis, pressao normalizada e registros historicos
+carregados. Esses dados historicos nao geram alerta climatico diretamente nesta
+etapa.
 
 ## Testes
 
