@@ -1,17 +1,23 @@
 import pandas as pd
 
-from app.streamlit_app import historical_period_text
-from app.streamlit_app import load_station_catalog_for_app
-from app.streamlit_app import load_station_history_for_app
+from app.streamlit_app import build_current_pressure_text
+from app.streamlit_app import build_historical_source_status
+from app.streamlit_app import build_interpretive_summary
 from app.streamlit_app import build_historical_statistics_rows
 from app.streamlit_app import build_pressure_reference_details
 from app.streamlit_app import find_nearest_station_by_coordinates
 from app.streamlit_app import find_station_by_city_name
 from app.streamlit_app import format_historical_anomalies
 from app.streamlit_app import format_safe_table_rows
+from app.streamlit_app import historical_period_text
 from app.streamlit_app import historical_analysis_status
+from app.streamlit_app import load_station_catalog_for_app
+from app.streamlit_app import load_station_history_for_app
 from app.streamlit_app import normalize_historical_datetime
 from app.streamlit_app import resolve_station_for_weather_data
+from app.streamlit_app import format_requested_period
+from app.streamlit_app import validate_historical_period
+from src.alerts.risk_classifier import WeatherRisk
 
 
 def make_station_catalog() -> pd.DataFrame:
@@ -42,6 +48,24 @@ def make_station_catalog() -> pd.DataFrame:
                 "station_label": "MANAUS - AM | A101",
             },
         ]
+    )
+
+
+def make_risk() -> WeatherRisk:
+    return WeatherRisk(
+        risk_level="moderado",
+        event_type="baixa_umidade",
+        reason="Classificacao moderada para baixa_umidade.",
+        triggered_rules=["baixa_umidade_moderada (moderado): Umidade baixa."],
+        variables={
+            "temperature": 30.0,
+            "feels_like": 31.0,
+            "humidity": 25.0,
+            "precipitation": 0.0,
+            "wind_speed": 10.0,
+            "pressure": 1010.0,
+        },
+        recommendations=["Acompanhar atualizacoes meteorologicas locais."],
     )
 
 
@@ -145,6 +169,24 @@ def test_historical_period_text_without_valid_date() -> None:
     assert historical_period_text(history) == "Nao identificado"
 
 
+def test_validate_historical_period_accepts_valid_interval() -> None:
+    is_valid, message = validate_historical_period(2025, 2026)
+
+    assert is_valid is True
+    assert message == ""
+
+
+def test_validate_historical_period_rejects_start_after_end() -> None:
+    is_valid, message = validate_historical_period(2026, 2025)
+
+    assert is_valid is False
+    assert "ano inicial" in message
+
+
+def test_format_requested_period_uses_selected_years() -> None:
+    assert format_requested_period(2025, 2026) == "2025 a 2026"
+
+
 def test_load_station_catalog_for_app_uses_zip_when_database_missing(tmp_path) -> None:
     class FakeSettings:
         inmet_database_path = str(tmp_path / "missing.duckdb")
@@ -187,6 +229,36 @@ def test_load_station_history_for_app_uses_zip_fallback(tmp_path) -> None:
 
     assert len(history) == 1
     assert history.loc[0, "station_code"] == "A101"
+
+
+def test_load_station_history_for_app_uses_selected_period(tmp_path) -> None:
+    class FakeSettings:
+        inmet_database_path = str(tmp_path / "missing.duckdb")
+
+    class FakeClient:
+        def load_station_history(self, station_code, start_year, end_year):
+            assert station_code == "A101"
+            assert start_year == 2025
+            assert end_year == 2026
+            return pd.DataFrame(
+                {
+                    "station_code": ["A101"],
+                    "datetime": ["2025-01-01"],
+                    "temperature": [30.0],
+                }
+            )
+
+    history = load_station_history_for_app(
+        FakeSettings(),
+        FakeClient(),
+        "A101",
+        2025,
+        2026,
+        "zip",
+    )
+
+    assert len(history) == 1
+    assert history.loc[0, "datetime"] == pd.Timestamp("2025-01-01")
 
 
 def test_historical_analysis_status_requires_current_data() -> None:
@@ -296,3 +368,73 @@ def test_build_historical_statistics_rows_marks_pressure_reference() -> None:
     assert pressure_row["Valor atual"] == "878.6 hPa"
     assert pressure_row["Percentil usado"] == "P5 a P95: 870.0 hPa a 905.0 hPa"
     assert wind_row["Valor atual"] == "20.0 km/h"
+
+
+def test_build_historical_source_status_for_database() -> None:
+    status = build_historical_source_status(
+        "database",
+        {"station_count": 2, "record_count": 100},
+    )
+
+    assert status["source_label"] == "DuckDB"
+    assert status["status"] == "Base historica processada encontrada"
+    assert "Estacoes: 2" in status["details"]
+    assert status["guidance"] == ""
+
+
+def test_build_historical_source_status_for_zip_fallback() -> None:
+    status = build_historical_source_status("zip")
+
+    assert status["source_label"] == "ZIPs locais"
+    assert status["status"] == "Base historica processada nao encontrada"
+    assert "python scripts/download_inmet_database.py" in status["guidance"]
+
+
+def test_build_current_pressure_text_for_station_level() -> None:
+    message = build_current_pressure_text(
+        {"pressure_reference": "openweather_grnd_level"}
+    )
+
+    assert "nivel da estacao" in message
+    assert "OpenWeather" in message
+
+
+def test_build_current_pressure_text_for_estimated_by_altitude() -> None:
+    message = build_current_pressure_text({"pressure_sea_level_hpa": 1010.0})
+
+    assert "nivel do mar" in message
+    assert "altitude da estacao" in message
+
+
+def test_build_interpretive_summary_with_historical_anomaly() -> None:
+    summary = build_interpretive_summary(
+        {"temperature": 30.0, "humidity": 25.0},
+        make_risk(),
+        {
+            "has_historical_data": True,
+            "anomalies": [{"anomaly_type": "LOW_HUMIDITY"}],
+        },
+        "MANAUS - AM | A101",
+    )
+
+    assert "risco moderado por baixa umidade" in summary
+    assert "MANAUS - AM | A101" in summary
+    assert "umidade esta abaixo do padrao esperado" in summary
+
+
+def test_build_interpretive_summary_without_history() -> None:
+    summary = build_interpretive_summary(
+        {"temperature": 30.0},
+        make_risk(),
+        None,
+        None,
+    )
+
+    assert "risco moderado por baixa umidade" in summary
+    assert "historico INMET ainda nao esta disponivel" in summary
+
+
+def test_build_interpretive_summary_without_current_data() -> None:
+    summary = build_interpretive_summary(None, make_risk(), None, None)
+
+    assert "Nao ha dados meteorologicos atuais carregados" in summary
