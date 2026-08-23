@@ -363,6 +363,54 @@ data/processed/inmet_hourly.csv
 Esse dataset tratado sera usado nas proximas etapas para comparacao historica e
 futura modelagem com aprendizado de maquina.
 
+## Dataset Rotulado para Machine Learning
+
+A etapa de dataset rotulado cria uma base supervisionada inicial a partir do
+INMET DuckDB, que e a base historica oficial processada do projeto. A base
+OpenWeather em Postgres continua separada: ela demonstra coleta continua e
+armazenamento proprio, mas ainda nao e usada como fonte principal de treino.
+
+Os rotulos iniciais sao gerados pelo `RiskClassifier` atual. Isso significa que
+o dataset recebe `risk_level` e `event_type` a partir das mesmas regras tecnicas
+explicaveis usadas no dashboard. Nesta etapa o projeto ainda nao treina modelos;
+o objetivo e apenas gerar, salvar e validar a base que servira para a etapa
+posterior de aprendizado supervisionado.
+
+O script usa as colunas meteorologicas do INMET, cria features de data e hora
+(`year`, `month`, `day`, `hour`, `day_of_year`) e remove registros sem dados
+minimos para classificacao. Quando a coluna `feels_like` nao existir no
+historico, a temperatura e usada como fallback para manter o dataset completo e
+explicavel.
+
+Para gerar o dataset filtrando algumas estacoes:
+
+```powershell
+python scripts\build_ml_dataset.py --start-year 2020 --end-year 2026 --stations A001,A101,A312
+```
+
+Para gerar uma amostra pequena de teste:
+
+```powershell
+python scripts\build_ml_dataset.py --start-year 2025 --end-year 2026 --limit 10000
+```
+
+Por padrao, o arquivo e salvo em:
+
+```text
+data/processed/ml_training_dataset.parquet
+```
+
+Tambem e possivel gerar CSV:
+
+```powershell
+python scripts\build_ml_dataset.py --start-year 2025 --end-year 2026 --limit 10000 --format csv --output data/processed/ml_training_dataset.csv
+```
+
+O resumo exibido no terminal mostra total de registros, periodo, quantidade de
+estacoes, distribuicao por `risk_level`, distribuicao por `event_type` e caminho
+salvo. O dataset gerado nao e versionado no Git; arquivos `*.parquet` e `*.csv`
+em `data/processed/` permanecem ignorados.
+
 ## Classificador por Regras
 
 A etapa atual implementa um classificador inicial por regras em
