@@ -92,6 +92,86 @@ O projeto separa as fontes por finalidade:
 - `INMET Historico`: usado como base historica oficial para consulta,
   comparacao e futuro treinamento dos modelos.
 
+## Base Propria OpenWeather em Postgres
+
+A partir desta etapa, o projeto tambem possui uma base operacional propria em
+Postgres para armazenar snapshots coletados da OpenWeather ao longo do tempo.
+Essa base fica separada do INMET historico:
+
+- `INMET DuckDB`: base historica oficial processada, usada para comparacao
+  historica e futuro treinamento inicial.
+- `OpenWeather Postgres`: base propria operacional do sistema, preenchida por
+  coletas periodicas realizadas pelo projeto.
+
+A coleta padrao usa as 27 capitais brasileiras. Essa escolha mantem o escopo
+controlado, demonstravel no TCC e compativel com o limite do Supabase Free. A
+lista pode ser expandida futuramente por meio de `OPENWEATHER_COLLECTION_CITIES`.
+
+O Supabase Free possui limite aproximado de 500 MB por projeto. Como o Supabase
+nao apaga registros antigos automaticamente, o sistema executa retencao apos as
+coletas:
+
+- remove observacoes com `collected_at` mais antigo que
+  `OPENWEATHER_RETENTION_DAYS`;
+- se ainda houver mais que `OPENWEATHER_MAX_ROWS`, remove os registros mais
+  antigos ate ficar dentro do limite;
+- `OPENWEATHER_STORE_RAW_PAYLOAD=false` por padrao para economizar espaco.
+
+Configure no `.env` local:
+
+```env
+DATABASE_URL=postgresql://usuario:senha@host:porta/database
+OPENWEATHER_COLLECTION_CITIES=Rio Branco:BR,Maceio:BR,Macapa:BR,Manaus:BR,Salvador:BR,Fortaleza:BR,Brasilia:BR,Vitoria:BR,Goiania:BR,Sao Luis:BR,Cuiaba:BR,Campo Grande:BR,Belo Horizonte:BR,Belem:BR,Joao Pessoa:BR,Curitiba:BR,Recife:BR,Teresina:BR,Rio de Janeiro:BR,Natal:BR,Porto Alegre:BR,Porto Velho:BR,Boa Vista:BR,Florianopolis:BR,Sao Paulo:BR,Aracaju:BR,Palmas:BR
+OPENWEATHER_RETENTION_DAYS=180
+OPENWEATHER_MAX_ROWS=100000
+OPENWEATHER_STORE_RAW_PAYLOAD=false
+```
+
+Nunca versionar `.env`, banco real ou dados coletados. `DATABASE_URL`,
+`OPENWEATHER_API_KEY` e tokens devem ficar apenas no ambiente local ou em
+secrets.
+
+Inicialize o banco Postgres:
+
+```powershell
+python scripts\init_weather_database.py
+```
+
+Coleta manual de uma cidade:
+
+```powershell
+python scripts\collect_openweather_snapshot.py --city Brasilia --country BR
+```
+
+Coleta de todas as capitais configuradas:
+
+```powershell
+python scripts\collect_openweather_snapshot.py
+```
+
+O resumo no terminal mostra apenas informacoes seguras: cidades processadas,
+registros inseridos, falhas, limpeza de retencao e registros restantes. A URL
+do banco e a chave da API nao sao impressas.
+
+Para automatizar no GitHub Actions, configure os secrets do repositorio:
+
+- `OPENWEATHER_API_KEY`
+- `DATABASE_URL`
+
+O workflow `.github/workflows/collect-openweather.yml` executa a coleta manual
+por `workflow_dispatch` e tambem 4 vezes ao dia pelo cron:
+
+```text
+0 0,6,12,18 * * *
+```
+
+O cron do GitHub Actions usa UTC. Ajuste a interpretacao dos horarios de acordo
+com o fuso desejado para a apresentacao.
+
+Essa base propria ainda nao e usada como fonte principal de treino de Machine
+Learning, pois comecara pequena. Ela prepara o sistema para coleta continua,
+armazenamento externo e validacao futura.
+
 O INMET nao e usado como fonte de tempo real neste projeto, pois o portal
 publico depende de validacoes como `seed`, `gcap` e reCAPTCHA. Em vez disso,
 use os ZIPs anuais da base historica oficial do INMET.

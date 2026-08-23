@@ -4,6 +4,40 @@ import os
 from dotenv import load_dotenv
 
 
+BRAZILIAN_CAPITALS: tuple[tuple[str, str], ...] = (
+    ("Rio Branco", "BR"),
+    ("Maceio", "BR"),
+    ("Macapa", "BR"),
+    ("Manaus", "BR"),
+    ("Salvador", "BR"),
+    ("Fortaleza", "BR"),
+    ("Brasilia", "BR"),
+    ("Vitoria", "BR"),
+    ("Goiania", "BR"),
+    ("Sao Luis", "BR"),
+    ("Cuiaba", "BR"),
+    ("Campo Grande", "BR"),
+    ("Belo Horizonte", "BR"),
+    ("Belem", "BR"),
+    ("Joao Pessoa", "BR"),
+    ("Curitiba", "BR"),
+    ("Recife", "BR"),
+    ("Teresina", "BR"),
+    ("Rio de Janeiro", "BR"),
+    ("Natal", "BR"),
+    ("Porto Alegre", "BR"),
+    ("Porto Velho", "BR"),
+    ("Boa Vista", "BR"),
+    ("Florianopolis", "BR"),
+    ("Sao Paulo", "BR"),
+    ("Aracaju", "BR"),
+    ("Palmas", "BR"),
+)
+DEFAULT_OPENWEATHER_COLLECTION_CITIES = ",".join(
+    f"{city}:{country}" for city, country in BRAZILIAN_CAPITALS
+)
+
+
 @dataclass(frozen=True)
 class Settings:
     """Configuracoes basicas carregadas do ambiente."""
@@ -24,6 +58,40 @@ class Settings:
     inmet_database_asset_name: str
     inmet_database_sha256: str
     github_token: str
+    database_url: str
+    openweather_collection_cities: tuple[tuple[str, str], ...]
+    openweather_retention_days: int
+    openweather_max_rows: int
+    openweather_store_raw_payload: bool
+
+
+def parse_openweather_collection_cities(
+    value: str,
+) -> tuple[tuple[str, str], ...]:
+    """Interpreta lista Cidade:PAIS usada na coleta OpenWeather."""
+    raw_value = value.strip() or DEFAULT_OPENWEATHER_COLLECTION_CITIES
+    cities: list[tuple[str, str]] = []
+
+    for item in raw_value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if ":" in item:
+            city, country = item.rsplit(":", 1)
+        else:
+            city, country = item, "BR"
+        city = city.strip()
+        country = country.strip().upper() or "BR"
+        if city:
+            cities.append((city, country))
+
+    return tuple(cities)
+
+
+def _parse_bool(value: str, default: bool = False) -> bool:
+    if not value.strip():
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "sim", "on"}
 
 
 def load_settings(load_dotenv_file: bool = True) -> Settings:
@@ -79,4 +147,18 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
             "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe",
         ),
         github_token=os.getenv("GITHUB_TOKEN", ""),
+        database_url=os.getenv("DATABASE_URL", ""),
+        openweather_collection_cities=parse_openweather_collection_cities(
+            os.getenv(
+                "OPENWEATHER_COLLECTION_CITIES",
+                DEFAULT_OPENWEATHER_COLLECTION_CITIES,
+            )
+        ),
+        openweather_retention_days=int(
+            os.getenv("OPENWEATHER_RETENTION_DAYS", "180")
+        ),
+        openweather_max_rows=int(os.getenv("OPENWEATHER_MAX_ROWS", "100000")),
+        openweather_store_raw_payload=_parse_bool(
+            os.getenv("OPENWEATHER_STORE_RAW_PAYLOAD", "false")
+        ),
     )

@@ -1,4 +1,6 @@
+from src.config.settings import BRAZILIAN_CAPITALS
 from src.config.settings import load_settings
+from src.config.settings import parse_openweather_collection_cities
 
 
 def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
@@ -18,6 +20,11 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
     monkeypatch.delenv("INMET_DATABASE_ASSET_NAME", raising=False)
     monkeypatch.delenv("INMET_DATABASE_SHA256", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("OPENWEATHER_COLLECTION_CITIES", raising=False)
+    monkeypatch.delenv("OPENWEATHER_RETENTION_DAYS", raising=False)
+    monkeypatch.delenv("OPENWEATHER_MAX_ROWS", raising=False)
+    monkeypatch.delenv("OPENWEATHER_STORE_RAW_PAYLOAD", raising=False)
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -46,6 +53,11 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
         == "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe"
     )
     assert settings.github_token == ""
+    assert settings.database_url == ""
+    assert settings.openweather_collection_cities == BRAZILIAN_CAPITALS
+    assert settings.openweather_retention_days == 180
+    assert settings.openweather_max_rows == 100000
+    assert settings.openweather_store_raw_payload is False
 
 
 def test_load_settings_reads_environment_variables(monkeypatch) -> None:
@@ -77,6 +89,14 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     monkeypatch.setenv("INMET_DATABASE_ASSET_NAME", "test.duckdb")
     monkeypatch.setenv("INMET_DATABASE_SHA256", "abc123")
     monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@example/db")
+    monkeypatch.setenv(
+        "OPENWEATHER_COLLECTION_CITIES",
+        "Rio Branco:BR,Belo Horizonte:BR,Teste:UY",
+    )
+    monkeypatch.setenv("OPENWEATHER_RETENTION_DAYS", "90")
+    monkeypatch.setenv("OPENWEATHER_MAX_ROWS", "5000")
+    monkeypatch.setenv("OPENWEATHER_STORE_RAW_PAYLOAD", "true")
 
     settings = load_settings(load_dotenv_file=False)
 
@@ -96,3 +116,24 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     assert settings.inmet_database_asset_name == "test.duckdb"
     assert settings.inmet_database_sha256 == "abc123"
     assert settings.github_token == "secret-token"
+    assert settings.database_url == "postgresql://user:secret@example/db"
+    assert settings.openweather_collection_cities == (
+        ("Rio Branco", "BR"),
+        ("Belo Horizonte", "BR"),
+        ("Teste", "UY"),
+    )
+    assert settings.openweather_retention_days == 90
+    assert settings.openweather_max_rows == 5000
+    assert settings.openweather_store_raw_payload is True
+
+
+def test_parse_openweather_collection_cities_handles_spaces() -> None:
+    cities = parse_openweather_collection_cities(
+        "Rio Branco:BR, Belo Horizonte:BR, Montevideo:uy"
+    )
+
+    assert cities == (
+        ("Rio Branco", "BR"),
+        ("Belo Horizonte", "BR"),
+        ("Montevideo", "UY"),
+    )

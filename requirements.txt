@@ -7,3 +7,4 @@ python-dotenv
 xgboost
 pytest
 duckdb
+psycopg[binary]
