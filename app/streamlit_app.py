@@ -1,5 +1,12 @@
 import math
+import sys
 from dataclasses import replace
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import pandas as pd
 import requests
@@ -19,6 +26,9 @@ from src.data.inmet_database import get_database_metadata
 from src.data.inmet_database import load_station_history_from_database
 from src.data.openweather_client import OpenWeatherClient
 from src.data.weather_client import normalize_weather_payload
+from src.ml.predict import METHODOLOGICAL_NOTE
+from src.ml.predict import load_model_bundle
+from src.ml.predict import predict_risk_level
 
 
 STANDARD_WEATHER_FIELDS = [
@@ -319,7 +329,7 @@ def show_weather_risk(risk: WeatherRisk) -> None:
     _show_risk_reason(risk)
     st.caption(
         "Classificacao por regras explicaveis do prototipo academico. "
-        "Esta etapa ainda nao usa Machine Learning; o ML sera avaliado depois."
+        "A previsao por Machine Learning aparece em secao separada."
     )
 
     st.write("Recomendacoes gerais")
@@ -335,6 +345,82 @@ def show_weather_risk(risk: WeatherRisk) -> None:
 
     with st.expander("Variaveis usadas no alerta por regras"):
         st.dataframe(pd.DataFrame([risk.variables]), width="stretch", hide_index=True)
+
+
+@st.cache_resource
+def load_ml_model_bundle_for_app() -> dict[str, object]:
+    """Carrega o modelo ML uma vez por sessao do Streamlit."""
+    return load_model_bundle()
+
+
+def get_ml_prediction_for_dashboard(
+    weather_data: dict[str, object] | None,
+    model_bundle: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Monta predicao ML sem quebrar o dashboard quando faltar modelo."""
+    if not weather_data:
+        return {
+            "available": False,
+            "prediction": None,
+            "model_name": None,
+            "selection_metric": None,
+            "features_used": [],
+            "missing_features": [],
+            "observations": [],
+            "methodological_note": METHODOLOGICAL_NOTE,
+            "error_message": "Dados meteorologicos atuais ausentes para previsao ML.",
+        }
+
+    bundle = model_bundle or load_ml_model_bundle_for_app()
+    return predict_risk_level(weather_data, model_bundle=bundle)
+
+
+def show_ml_prediction_section(weather_data: dict[str, object] | None) -> None:
+    """Exibe a previsao ML treinada localmente, quando disponivel."""
+    prediction_result = get_ml_prediction_for_dashboard(weather_data)
+
+    with st.container(border=True):
+        if not prediction_result.get("available"):
+            st.info(str(prediction_result.get("error_message", "")))
+            return
+
+        if prediction_result.get("prediction"):
+            col_prediction, col_model, col_metric = st.columns(3)
+            col_prediction.metric(
+                "Risk level previsto",
+                str(prediction_result["prediction"]).upper(),
+            )
+            col_model.metric(
+                "Modelo selecionado",
+                str(prediction_result.get("model_name") or "Nao informado"),
+            )
+            col_metric.metric(
+                "Metrica de selecao",
+                str(prediction_result.get("selection_metric") or "Nao informada"),
+            )
+        else:
+            st.info(str(prediction_result.get("error_message", "")))
+
+        observations = prediction_result.get("observations", [])
+        if observations:
+            for observation in observations:
+                st.caption(str(observation))
+
+        with st.expander("Features usadas na previsao ML"):
+            rows = [
+                {"Feature": feature}
+                for feature in prediction_result.get("features_used", [])
+            ]
+            if rows:
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            else:
+                st.write("Nenhuma feature informada.")
+
+            missing_features = prediction_result.get("missing_features", [])
+            if missing_features:
+                st.write("Features ausentes: " + ", ".join(missing_features))
+
+        st.caption(str(prediction_result.get("methodological_note", "")))
 
 
 def _show_risk_reason(risk: WeatherRisk) -> None:
@@ -875,6 +961,8 @@ def show_inmet_historical_section(
         if risk is not None:
             st.subheader("3. Alerta por regras")
             show_weather_risk(risk)
+            st.subheader("4. Previsão por Machine Learning")
+            show_ml_prediction_section(weather_data)
             st.subheader("5. Resumo")
             st.write(build_interpretive_summary(weather_data, risk, None, None))
         return
@@ -901,6 +989,8 @@ def show_inmet_historical_section(
         if risk is not None:
             st.subheader("3. Alerta por regras")
             show_weather_risk(risk)
+            st.subheader("4. Previsão por Machine Learning")
+            show_ml_prediction_section(weather_data)
             st.subheader("5. Resumo")
             st.write(build_interpretive_summary(weather_data, risk, None, None))
         return
@@ -922,6 +1012,8 @@ def show_inmet_historical_section(
         if risk is not None:
             st.subheader("3. Alerta por regras")
             show_weather_risk(risk)
+            st.subheader("4. Previsão por Machine Learning")
+            show_ml_prediction_section(weather_data)
             st.subheader("5. Resumo")
             st.write(
                 build_interpretive_summary(weather_data, risk, None, station_label)
@@ -933,6 +1025,8 @@ def show_inmet_historical_section(
         if risk is not None:
             st.subheader("3. Alerta por regras")
             show_weather_risk(risk)
+            st.subheader("4. Previsão por Machine Learning")
+            show_ml_prediction_section(weather_data)
             st.subheader("5. Resumo")
             st.write(
                 build_interpretive_summary(weather_data, risk, None, station_label)
@@ -1010,8 +1104,11 @@ def show_inmet_historical_section(
                 "A comparacao usa grnd_level da OpenWeather quando disponivel "
                 "ou estima a pressao pela altitude da estacao."
             )
+    st.subheader("5. Previsão por Machine Learning")
+    show_ml_prediction_section(weather_data)
+
     if risk is not None:
-        st.subheader("5. Resumo interpretativo")
+        st.subheader("6. Resumo interpretativo")
         with st.container(border=True):
             st.write(
                 build_interpretive_summary(
@@ -1402,11 +1499,10 @@ def main() -> None:
     st.title("Sistema Inteligente de Alerta Climatico")
     st.write(
         "Consulta dados atuais da OpenWeather, associa uma estacao historica "
-        "do INMET e apresenta um alerta inicial por regras explicaveis."
+        "do INMET e apresenta alerta por regras e previsao ML local."
     )
     st.caption(
-        "Nesta etapa ainda nao ha Machine Learning; "
-        "essa sera uma fase posterior."
+        "O modelo ML e carregado apenas quando existir em data/models/."
     )
 
     query, submitted = build_query_form(settings)
