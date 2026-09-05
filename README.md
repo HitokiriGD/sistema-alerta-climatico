@@ -372,9 +372,8 @@ armazenamento proprio, mas ainda nao e usada como fonte principal de treino.
 
 Os rotulos iniciais sao gerados pelo `RiskClassifier` atual. Isso significa que
 o dataset recebe `risk_level` e `event_type` a partir das mesmas regras tecnicas
-explicaveis usadas no dashboard. Nesta etapa o projeto ainda nao treina modelos;
-o objetivo e apenas gerar, salvar e validar a base que servira para a etapa
-posterior de aprendizado supervisionado.
+explicaveis usadas no dashboard. Na etapa de dataset, o objetivo e gerar,
+salvar e validar a base usada pelo aprendizado supervisionado.
 
 O script usa as colunas meteorologicas do INMET, cria features de data e hora
 (`year`, `month`, `day`, `hour`, `day_of_year`) e remove registros sem dados
@@ -424,7 +423,8 @@ rastreabilidade entre regra, rotulo e resultado do treinamento.
 
 Os modelos treinados nesta etapa sao:
 
-- Regressao Logistica, como baseline interpretavel;
+- Baseline de classe majoritaria, como referencia minima de comparacao;
+- Regressao Logistica, como modelo linear interpretavel;
 - Random Forest, para capturar relacoes nao lineares simples;
 - XGBoost, para avaliar um modelo de boosting supervisionado.
 
@@ -465,6 +465,61 @@ data/reports/risk_level_confusion_matrix.csv
 A selecao do melhor modelo usa `f1_macro` por padrao. Os diretorios
 `data/models/` e `data/reports/`, os modelos `*.joblib` e os datasets gerados
 nao sao versionados no Git.
+
+## Avaliacao Robusta dos Modelos de Machine Learning
+
+A avaliacao robusta compara o baseline de classe majoritaria com Regressao
+Logistica, Random Forest e XGBoost para prever `risk_level`. O baseline
+`baseline_most_frequent` usa `DummyClassifier(strategy="most_frequent")` e
+serve como referencia minima: um modelo real precisa superar essa estrategia
+simples para justificar sua utilidade.
+
+Existem dois tipos de divisao treino/teste:
+
+- `random`: embaralha os registros e separa uma parte para teste. E util para
+  uma verificacao inicial, mas pode misturar anos parecidos entre treino e
+  teste.
+- `temporal`: treina com anos anteriores e testa com anos posteriores. Esse
+  formato e mais realista para clima, pois simula o uso do passado para prever
+  dados futuros.
+
+A acuracia sozinha nao basta porque a base pode ter muitas linhas de risco
+`baixo` e poucas linhas `alto` ou `critico`. Por isso o relatorio destaca
+`f1_macro`, `recall_macro` e metricas por classe. O `f1_macro` compara as
+classes de forma equilibrada, o `recall_macro` ajuda a observar falhas de
+identificacao em classes minoritarias, e as metricas por classe mostram
+`precision`, `recall`, `f1-score` e `support` para cada nivel de risco.
+
+Limite metodologico importante: os rotulos `risk_level` sao derivados do
+`RiskClassifier`. Assim, os modelos aprendem a reproduzir uma classificacao
+tecnica baseada em regras explicaveis. As metricas desta etapa nao representam
+validacao contra eventos reais oficiais de desastre.
+
+Fluxo recomendado:
+
+```powershell
+python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 --stations A001,A101,A312
+python scripts/train_ml_models.py
+python scripts/evaluate_ml_models.py --split temporal --train-end-year 2024 --test-start-year 2025
+```
+
+Para executar avaliacao com split aleatorio:
+
+```powershell
+python scripts/evaluate_ml_models.py --split random
+```
+
+O relatorio robusto e salvo em:
+
+```text
+data/reports/risk_level_robust_evaluation_temporal_report.json
+data/reports/risk_level_robust_confusion_matrix_temporal.csv
+data/reports/risk_level_robust_evaluation_random_report.json
+data/reports/risk_level_robust_confusion_matrix_random.csv
+```
+
+Esses relatorios sao gerados localmente e nao sao versionados. O diretorio
+`data/reports/` permanece ignorado pelo Git.
 
 ## Classificador por Regras
 

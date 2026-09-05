@@ -44,6 +44,112 @@ def prepare_features_and_target(
     target_column: str = "risk_level",
 ) -> tuple[pd.DataFrame, pd.Series, list[str]]:
     """Seleciona features numericas disponiveis e o alvo supervisionado."""
+    X, y, available_features, _ = prepare_features_target_with_metadata(
+        df,
+        target_column=target_column,
+    )
+    return X, y, available_features
+
+
+def prepare_features_target_with_metadata(
+    df: pd.DataFrame,
+    target_column: str = "risk_level",
+    preserved_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, pd.Series, list[str], pd.DataFrame]:
+    """Seleciona features, alvo e metadados alinhados apos limpeza."""
+    data, available_features = _prepare_model_dataframe(
+        df,
+        target_column=target_column,
+        preserved_columns=preserved_columns,
+    )
+    X = data[available_features].reset_index(drop=True)
+    y = data[target_column].astype(str).reset_index(drop=True)
+    metadata_columns = [
+        column
+        for column in preserved_columns or []
+        if column in data.columns
+    ]
+    metadata = data[metadata_columns].reset_index(drop=True)
+    return X, y, available_features, metadata
+
+
+def split_dataset_temporal(
+    df: pd.DataFrame,
+    train_end_year: int,
+    test_start_year: int,
+    target_column: str = "risk_level",
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict[str, Any]]:
+    """Divide dataset por ano, treinando no passado e testando no futuro."""
+    if "year" not in df.columns:
+        raise ValueError("Split temporal requer a coluna year no dataset.")
+
+    if int(train_end_year) >= int(test_start_year):
+        raise ValueError(
+            "Split temporal invalido: train_end_year deve ser menor "
+            "que test_start_year."
+        )
+
+    data = df.copy()
+    data["__split_year"] = pd.to_numeric(data["year"], errors="coerce")
+    data = data.dropna(subset=["__split_year"])
+    if data.empty:
+        raise ValueError(
+            "Split temporal nao encontrou registros com ano valido."
+        )
+
+    train_mask = data["__split_year"] <= int(train_end_year)
+    test_mask = data["__split_year"] >= int(test_start_year)
+    train_count = int(train_mask.sum())
+    test_count = int(test_mask.sum())
+    if train_count == 0 or test_count == 0:
+        raise ValueError(
+            "Split temporal sem registros suficientes: "
+            f"treino={train_count}, teste={test_count}."
+        )
+
+    temporal_data = pd.concat(
+        [
+            data.loc[train_mask].assign(__split_group="train"),
+            data.loc[test_mask].assign(__split_group="test"),
+        ],
+        ignore_index=True,
+    )
+    prepared, feature_columns = _prepare_model_dataframe(
+        temporal_data,
+        target_column=target_column,
+        preserved_columns=["__split_year", "__split_group"],
+    )
+
+    train_data = prepared[prepared["__split_group"] == "train"]
+    test_data = prepared[prepared["__split_group"] == "test"]
+    if train_data.empty or test_data.empty:
+        raise ValueError(
+            "Split temporal sem registros suficientes apos limpeza das "
+            "features e do alvo."
+        )
+
+    X_train = train_data[feature_columns].reset_index(drop=True)
+    X_test = test_data[feature_columns].reset_index(drop=True)
+    y_train = train_data[target_column].astype(str).reset_index(drop=True)
+    y_test = test_data[target_column].astype(str).reset_index(drop=True)
+    split_info = {
+        "split_type": "temporal",
+        "train_period": _year_period(train_data["__split_year"]),
+        "test_period": _year_period(test_data["__split_year"]),
+        "total_records": int(len(prepared)),
+        "train_records": int(len(X_train)),
+        "test_records": int(len(X_test)),
+        "features_used": feature_columns,
+    }
+    return X_train, X_test, y_train, y_test, split_info
+
+
+def _prepare_model_dataframe(
+    df: pd.DataFrame,
+    target_column: str = "risk_level",
+    preserved_columns: list[str] | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Normaliza features e alvo mantendo colunas auxiliares opcionais."""
     if target_column not in df.columns:
         raise ValueError(f"Coluna alvo nao encontrada: {target_column}")
 
@@ -53,7 +159,12 @@ def prepare_features_and_target(
     if not available_features:
         raise ValueError("Nenhuma feature numerica esperada foi encontrada.")
 
-    data = df[available_features + [target_column]].copy()
+    extra_columns = [
+        column
+        for column in preserved_columns or []
+        if column in df.columns and column not in available_features
+    ]
+    data = df[available_features + [target_column] + extra_columns].copy()
     data[target_column] = data[target_column].astype("string")
     data = data.dropna(subset=[target_column])
     data = data[data[target_column].str.strip() != ""]
@@ -67,9 +178,7 @@ def prepare_features_and_target(
         fill_value = 0.0 if pd.isna(median) else float(median)
         data[column] = data[column].fillna(fill_value)
 
-    X = data[available_features].reset_index(drop=True)
-    y = data[target_column].astype(str).reset_index(drop=True)
-    return X, y, available_features
+    return data.reset_index(drop=True), available_features
 
 
 def split_dataset(
@@ -218,6 +327,14 @@ def _ordered_labels(y: pd.Series) -> list[str]:
 
 def _class_distribution(y: pd.Series) -> dict[str, int]:
     return {str(label): int(count) for label, count in y.value_counts().items()}
+
+
+def _year_period(years: pd.Series) -> dict[str, int]:
+    clean_years = pd.to_numeric(years, errors="coerce").dropna().astype(int)
+    return {
+        "start_year": int(clean_years.min()),
+        "end_year": int(clean_years.max()),
+    }
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

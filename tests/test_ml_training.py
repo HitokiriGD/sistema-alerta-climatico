@@ -144,10 +144,15 @@ def test_select_best_model_chooses_highest_metric() -> None:
     assert best == "random_forest"
 
 
-def test_get_candidate_models_returns_three_models() -> None:
+def test_get_candidate_models_returns_expected_models() -> None:
     models = get_candidate_models()
 
-    assert set(models) == {"logistic_regression", "random_forest", "xgboost"}
+    assert set(models) == {
+        "baseline_most_frequent",
+        "logistic_regression",
+        "random_forest",
+        "xgboost",
+    }
 
 
 def test_train_and_evaluate_models_saves_metadata_and_report(tmp_path) -> None:

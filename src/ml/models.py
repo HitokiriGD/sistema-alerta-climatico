@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.base import ClassifierMixin
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -68,6 +69,11 @@ def build_logistic_regression_model() -> Pipeline:
     )
 
 
+def build_baseline_most_frequent_model() -> DummyClassifier:
+    """Cria baseline simples que sempre prediz a classe majoritaria."""
+    return DummyClassifier(strategy="most_frequent")
+
+
 def build_random_forest_model() -> RandomForestClassifier:
     """Cria Random Forest simples com pesos balanceados."""
     return RandomForestClassifier(
@@ -92,6 +98,7 @@ def build_xgboost_model() -> LabelEncodedXGBClassifier:
 def get_candidate_models() -> dict[str, Any]:
     """Retorna os modelos candidatos avaliados no TCC."""
     return {
+        "baseline_most_frequent": build_baseline_most_frequent_model(),
         "logistic_regression": build_logistic_regression_model(),
         "random_forest": build_random_forest_model(),
         "xgboost": build_xgboost_model(),
