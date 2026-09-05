@@ -521,6 +521,47 @@ data/reports/risk_level_robust_confusion_matrix_random.csv
 Esses relatorios sao gerados localmente e nao sao versionados. O diretorio
 `data/reports/` permanece ignorado pelo Git.
 
+## Previsão por Machine Learning no Dashboard
+
+O dashboard pode exibir uma previsao de `risk_level` usando o modelo treinado
+localmente. Ele nao treina modelos durante a renderizacao da tela; apenas tenta
+carregar estes arquivos:
+
+```text
+data/models/risk_level_model.joblib
+data/models/risk_level_model_metadata.json
+```
+
+Para gerar a base e treinar o modelo no ambiente local:
+
+```powershell
+python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 --stations A001,A101,A312
+python scripts/train_ml_models.py
+```
+
+Depois disso, execute o dashboard:
+
+```powershell
+streamlit run app\streamlit_app.py
+```
+
+A secao `Previsão por Machine Learning` aparece depois do alerta por regras e
+da comparacao historica. Quando o modelo existe, ela mostra o `risk_level`
+previsto, o nome do modelo selecionado, a metrica usada na selecao e as
+features usadas na predicao. Quando o modelo nao existe, o dashboard continua
+funcionando e exibe uma mensagem orientando a gerar o dataset e treinar com
+`python scripts/train_ml_models.py`.
+
+Cada ambiente precisa treinar o modelo localmente ou receber esses arquivos por
+fora do repositorio. O modelo `*.joblib`, os metadados em `data/models/`, os
+datasets em `data/processed/` e os relatorios em `data/reports/` nao sao
+versionados no Git.
+
+Limite metodologico: os rotulos usados no treinamento sao derivados do
+`RiskClassifier`. A previsao ML representa uma reproducao aprendida dessa
+classificacao tecnica por regras, nao uma validacao contra eventos reais
+oficiais de desastre.
+
 ## Classificador por Regras
 
 A etapa atual implementa um classificador inicial por regras em
@@ -573,6 +614,7 @@ Na tela, o sistema mostra o fluxo executado:
 - fonte historica usada, priorizando DuckDB e usando ZIPs locais como fallback;
 - alerta atual por regras explicaveis;
 - comparacao estatistica com o historico INMET;
+- previsão ML local quando houver modelo treinado;
 - resumo interpretativo final em linguagem simples.
 
 A estacao manual continua disponivel em `Opcao avancada: alterar estacao INMET
@@ -596,9 +638,9 @@ estatisticas e exibe:
 - detalhes tecnicos da pressao atmosferica em um expander.
 
 Essa comparacao historica complementa o alerta principal por regras. Ela ajuda
-a explicar se o dado atual esta fora do padrao observado para a estacao, mas
-ainda nao e Machine Learning e nao substitui o classificador por regras nem
-alertas oficiais.
+a explicar se o dado atual esta fora do padrao observado para a estacao. A
+previsão ML aparece em secao separada e nao substitui o classificador por
+regras nem alertas oficiais.
 
 A pressao segue o mesmo cuidado de referencial descrito acima: o historico do
 INMET usa pressao ao nivel da estacao. Quando a OpenWeather fornece
@@ -621,10 +663,11 @@ Roteiro curto para apresentacao do TCC:
    historico`.
 4. Mostrar os dados atuais, a estacao INMET associada e a fonte historica usada.
 5. Apresentar o alerta atual por regras, com justificativa e recomendacoes.
-6. Abrir os expanders apenas se a banca pedir detalhes de variaveis, percentis,
-   pressao normalizada ou regras acionadas.
-7. Fechar com o `Resumo interpretativo`, reforcando que a etapa atual ainda nao
-   e Machine Learning; os modelos supervisionados sao etapa posterior.
+6. Mostrar a secao `Previsão por Machine Learning` quando existir modelo local.
+7. Abrir os expanders apenas se a banca pedir detalhes de variaveis, percentis,
+   pressao normalizada, regras acionadas ou features usadas pelo modelo.
+8. Fechar com o `Resumo interpretativo`, reforcando que a previsao ML reproduz
+   rotulos tecnicos derivados de regras e nao substitui alertas oficiais.
 
 ## Instalacao
 
@@ -657,8 +700,9 @@ um erro amigavel e nao executa a busca.
 
 Na tela principal, os detalhes tecnicos ficam em expanders: variaveis brutas,
 regras acionadas, percentis, pressao normalizada e registros historicos
-carregados. Esses dados historicos nao geram alerta climatico diretamente nesta
-etapa.
+carregados. Quando houver modelo treinado localmente, a tela tambem mostra as
+features usadas na previsao ML. Os dados historicos nao geram alerta climatico
+diretamente.
 
 ## Testes
 
