@@ -1,7 +1,9 @@
 import math
 import sys
 from dataclasses import replace
+import json
 from pathlib import Path
+from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -108,6 +110,58 @@ DEFAULT_HISTORICAL_START_YEAR = 2020
 DEFAULT_HISTORICAL_END_YEAR = 2026
 HISTORICAL_MIN_YEAR = 2000
 HISTORICAL_MAX_YEAR = 2026
+ML_REPORT_FILENAMES = [
+    "risk_level_robust_evaluation_temporal_report.json",
+    "risk_level_robust_evaluation_random_report.json",
+    "risk_level_training_report.json",
+]
+ML_EVALUATION_COMMAND = (
+    "python scripts/evaluate_ml_models.py --split temporal "
+    "--train-end-year 2024 --test-start-year 2025"
+)
+METHODOLOGICAL_NOTE_SHORT = (
+    "O modelo foi treinado com rotulos derivados de regras tecnicas. "
+    "A previsao representa uma classificacao supervisionada aprendida, "
+    "nao validacao contra eventos reais oficiais."
+)
+RISK_BADGE_STYLES = {
+    "baixo": {
+        "background": "rgba(20, 184, 166, 0.16)",
+        "border": "rgba(45, 212, 191, 0.54)",
+        "text": "#99f6e4",
+    },
+    "moderado": {
+        "background": "rgba(245, 158, 11, 0.16)",
+        "border": "rgba(251, 191, 36, 0.58)",
+        "text": "#fde68a",
+    },
+    "alto": {
+        "background": "rgba(249, 115, 22, 0.17)",
+        "border": "rgba(251, 146, 60, 0.64)",
+        "text": "#fed7aa",
+    },
+    "critico": {
+        "background": "rgba(239, 68, 68, 0.18)",
+        "border": "rgba(248, 113, 113, 0.70)",
+        "text": "#fecaca",
+    },
+    "indisponivel": {
+        "background": "rgba(148, 163, 184, 0.12)",
+        "border": "rgba(148, 163, 184, 0.36)",
+        "text": "#cbd5e1",
+    },
+}
+RISK_RECOMMENDATIONS = {
+    "baixo": "Monitorar normalmente e manter acompanhamento das atualizacoes.",
+    "moderado": "Manter atencao e acompanhar atualizacoes meteorologicas.",
+    "alto": (
+        "Autoridades e responsaveis devem acompanhar com atencao reforcada."
+    ),
+    "critico": (
+        "Autoridades e responsaveis devem avaliar medidas preventivas e "
+        "alertas locais."
+    ),
+}
 
 
 def build_manual_weather_data() -> dict[str, object]:
@@ -149,13 +203,17 @@ def build_manual_weather_data() -> dict[str, object]:
     }
 
 
-def build_query_form(settings: Settings) -> tuple[dict[str, object], bool]:
+def build_query_form(
+    settings: Settings,
+    compact: bool = False,
+) -> tuple[dict[str, object], bool]:
     """Monta o formulario principal de consulta do dashboard."""
     with st.container(border=True):
-        st.subheader("Consulta")
-        st.caption(
-            "Informe a cidade e o periodo historico antes de buscar os dados."
-        )
+        st.subheader("Nova consulta" if compact else "Consulta")
+        if not compact:
+            st.caption(
+                "Informe a cidade e o periodo historico antes de buscar os dados."
+            )
         with st.form("weather_query_form"):
             col_city, col_country = st.columns([3, 1])
             city = col_city.text_input("Cidade", value=settings.default_city)
@@ -328,8 +386,8 @@ def show_weather_risk(risk: WeatherRisk) -> None:
     col_event.metric("Evento principal", format_event_type(risk.event_type))
     _show_risk_reason(risk)
     st.caption(
-        "Classificacao por regras explicaveis do prototipo academico. "
-        "A previsao por Machine Learning aparece em secao separada."
+        "As regras justificam tecnicamente a classificacao e tambem geraram "
+        "os rotulos usados no treinamento supervisionado."
     )
 
     st.write("Recomendacoes gerais")
@@ -375,28 +433,444 @@ def get_ml_prediction_for_dashboard(
     return predict_risk_level(weather_data, model_bundle=bundle)
 
 
-def show_ml_prediction_section(weather_data: dict[str, object] | None) -> None:
-    """Exibe a previsao ML treinada localmente, quando disponivel."""
-    prediction_result = get_ml_prediction_for_dashboard(weather_data)
+@st.cache_data
+def load_ml_evaluation_report_for_app(report_dir: str = "data/reports") -> dict[str, Any]:
+    """Carrega relatorio de avaliacao ML com cache do Streamlit."""
+    return load_ml_evaluation_report(report_dir)
+
+
+def load_ml_evaluation_report(report_dir: str | Path = "data/reports") -> dict[str, Any]:
+    """Carrega o melhor relatorio local disponivel, priorizando temporal."""
+    base_dir = Path(report_dir)
+    for filename in ML_REPORT_FILENAMES:
+        report_path = base_dir / filename
+        if not report_path.exists():
+            continue
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            return {
+                "available": False,
+                "report": None,
+                "report_path": str(report_path),
+                "source": "",
+                "error_message": f"Nao foi possivel ler o relatorio ML: {error}",
+            }
+        return {
+            "available": True,
+            "report": report,
+            "report_path": str(report_path),
+            "source": _report_source_from_filename(filename),
+            "error_message": "",
+        }
+
+    return {
+        "available": False,
+        "report": None,
+        "report_path": "",
+        "source": "",
+        "error_message": (
+            "Relatorio de avaliacao ML nao encontrado. Gere com "
+            f"{ML_EVALUATION_COMMAND}."
+        ),
+    }
+
+
+def build_model_comparison_table(report: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Monta tabela simples com metricas principais por modelo."""
+    metrics_by_model = _metrics_by_model_from_report(report)
+    rows = []
+    for model_name, metrics in metrics_by_model.items():
+        if not isinstance(metrics, dict):
+            continue
+        rows.append(
+            {
+                "Modelo": model_name,
+                "accuracy": _round_metric(metrics.get("accuracy")),
+                "precision_macro": _round_metric(metrics.get("precision_macro")),
+                "recall_macro": _round_metric(metrics.get("recall_macro")),
+                "f1_macro": _round_metric(metrics.get("f1_macro")),
+            }
+        )
+    return rows
+
+
+def extract_best_model_summary(report: dict[str, Any] | None) -> dict[str, Any]:
+    """Extrai resumo do melhor modelo e comparacao com baseline."""
+    if not report:
+        return {
+            "best_model_name": "",
+            "selection_metric": "",
+            "baseline_f1_macro": None,
+            "best_model_f1_macro": None,
+            "absolute_difference": None,
+        }
+
+    best_model_name = str(
+        report.get("best_model_name")
+        or _report_metadata(report).get("selected_model_name")
+        or ""
+    )
+    selection_metric = str(
+        report.get("selection_metric")
+        or _report_metadata(report).get("metric_used")
+        or "f1_macro"
+    )
+    metrics_by_model = _metrics_by_model_from_report(report)
+    best_metrics = metrics_by_model.get(best_model_name, {})
+    baseline_metrics = metrics_by_model.get("baseline_most_frequent", {})
+    baseline_comparison = report.get("baseline_comparison", {})
+    if not isinstance(baseline_comparison, dict):
+        baseline_comparison = {}
+
+    baseline_f1 = baseline_comparison.get("baseline_score")
+    if baseline_f1 is None:
+        baseline_f1 = baseline_metrics.get("f1_macro")
+    best_f1 = baseline_comparison.get("best_model_score")
+    if best_f1 is None:
+        best_f1 = best_metrics.get("f1_macro")
+
+    baseline_value = _optional_float(baseline_f1)
+    best_value = _optional_float(best_f1)
+    if baseline_value is None or best_value is None:
+        difference = None
+    else:
+        difference = best_value - baseline_value
+
+    return {
+        "best_model_name": best_model_name,
+        "selection_metric": selection_metric,
+        "baseline_f1_macro": baseline_value,
+        "best_model_f1_macro": best_value,
+        "absolute_difference": difference,
+    }
+
+
+def format_probability_table(probabilities: dict[str, object] | None) -> list[dict[str, Any]]:
+    """Formata probabilidades por classe em ordem de risco."""
+    if not probabilities:
+        return []
+
+    ordered_labels = ["baixo", "moderado", "alto", "critico"]
+    rows = []
+    for label in ordered_labels:
+        probability = _optional_float(probabilities.get(label))
+        if probability is None:
+            continue
+        rows.append(
+            {
+                "Classe": label,
+                "Probabilidade": round(probability, 4),
+                "Probabilidade (%)": f"{probability * 100:.1f}%",
+            }
+        )
+    return rows
+
+
+def build_intelligent_diagnosis_summary(
+    ml_prediction: dict[str, object] | None,
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> dict[str, str]:
+    """Consolida predicao ML, regras e principal anomalia historica."""
+    ml_risk = (
+        str((ml_prediction or {}).get("prediction", ""))
+        if (ml_prediction or {}).get("available")
+        else ""
+    )
+    rule_risk = risk.risk_level if risk is not None else ""
+    anomaly = _main_historical_anomaly_text(analysis_result)
+
+    if ml_risk:
+        summary = (
+            f"O modelo supervisionado indica risco {ml_risk}. "
+            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+        )
+    elif (ml_prediction or {}).get("error_message"):
+        summary = (
+            "A camada de Machine Learning ainda nao esta disponivel localmente. "
+            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+        )
+    else:
+        summary = (
+            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+        )
+
+    if anomaly:
+        summary += f" Principal anomalia historica: {anomaly}."
+    else:
+        summary += " Nenhuma anomalia historica principal foi destacada."
+
+    return {
+        "ml_risk": ml_risk or "indisponivel",
+        "rule_risk": rule_risk or "indisponivel",
+        "main_anomaly": anomaly or "sem anomalia destacada",
+        "summary_text": summary,
+    }
+
+
+def build_risk_recommendation(risk_level: object) -> str:
+    """Retorna recomendacao pratica para apoio a decisao."""
+    normalized = str(risk_level or "").strip().lower()
+    return RISK_RECOMMENDATIONS.get(
+        normalized,
+        "Consultar as evidencias tecnicas e manter monitoramento da condicao atual.",
+    )
+
+
+def build_divergence_message(
+    ml_risk: object,
+    rule_risk: object,
+) -> str:
+    """Explica concordancia ou divergencia entre ML supervisionado e regras."""
+    ml_text = str(ml_risk or "").strip().lower()
+    rule_text = str(rule_risk or "").strip().lower()
+    if not ml_text or ml_text == "indisponivel":
+        return (
+            "A camada de Machine Learning nao esta disponivel para esta consulta. "
+            "O resultado atual usa a classificacao tecnica por regras."
+        )
+    if not rule_text or rule_text == "indisponivel":
+        return (
+            f"O modelo supervisionado indicou {ml_text}, mas as regras tecnicas "
+            "nao foram calculadas para esta consulta."
+        )
+    if ml_text == rule_text:
+        return (
+            "O modelo supervisionado e as regras tecnicas chegaram ao mesmo "
+            "nivel de risco."
+        )
+    return (
+        f"O modelo supervisionado indicou {ml_text}, enquanto as regras tecnicas "
+        f"indicaram {rule_text}. Essa diferenca pode ocorrer porque o modelo "
+        "aprende combinacoes entre variaveis historicas rotuladas, enquanto as "
+        "regras aplicam limites diretos."
+    )
+
+
+def build_main_result_summary(
+    ml_prediction: dict[str, object] | None,
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> dict[str, object]:
+    """Consolida os campos principais exibidos no resultado da analise."""
+    prediction = ml_prediction or {}
+    ml_available = bool(prediction.get("available") and prediction.get("prediction"))
+    ml_risk = str(prediction.get("prediction")) if ml_available else "indisponivel"
+    rule_risk = risk.risk_level if risk is not None else "indisponivel"
+    final_risk = ml_risk if ml_available else rule_risk
+    anomaly_count = _historical_anomaly_count(analysis_result)
+
+    return {
+        "final_risk": final_risk or "indisponivel",
+        "ml_risk": ml_risk,
+        "model_name": str(prediction.get("model_name") or "Nao disponivel"),
+        "selection_metric": str(
+            prediction.get("selection_metric") or "Nao informada"
+        ),
+        "rule_risk": rule_risk or "indisponivel",
+        "anomaly_count": anomaly_count,
+        "main_anomaly": _main_historical_anomaly_text(analysis_result)
+        or "sem anomalia destacada",
+        "recommendation": build_risk_recommendation(final_risk),
+    }
+
+
+def build_result_explanation(
+    ml_prediction: dict[str, object] | None,
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> str:
+    """Monta explicacao curta sobre a classificacao final."""
+    summary = build_main_result_summary(ml_prediction, risk, analysis_result)
+    ml_risk = str(summary["ml_risk"])
+    rule_risk = str(summary["rule_risk"])
+    variable_text = _attention_variable_text(risk, analysis_result)
+    rule_text = (
+        f"As regras tecnicas indicaram risco {rule_risk}"
+        if rule_risk != "indisponivel"
+        else "As regras tecnicas nao foram calculadas"
+    )
+    history_text = _historical_explanation_text(analysis_result)
+    divergence_text = build_divergence_message(ml_risk, rule_risk)
+
+    if ml_risk != "indisponivel":
+        ml_text = f"O modelo de Machine Learning supervisionado classificou a consulta como {ml_risk}."
+    else:
+        ml_text = (
+            "O modelo de Machine Learning supervisionado nao esta disponivel "
+            "localmente; a consulta permanece apoiada pelas regras tecnicas."
+        )
+
+    return " ".join(
+        [
+            ml_text,
+            variable_text,
+            rule_text + ".",
+            history_text,
+            divergence_text,
+        ]
+    )
+
+
+def build_evidence_summary(
+    weather_data: dict[str, object] | None,
+    selected_station: dict[str, object] | None = None,
+    requested_period: str = "",
+    analysis_result: dict[str, object] | None = None,
+) -> list[dict[str, str]]:
+    """Monta cards compactos com evidencias usadas na consulta."""
+    weather_data = weather_data or {}
+    station_label = "-"
+    if selected_station:
+        station_label = str(
+            selected_station.get("station_label")
+            or selected_station.get("station_code")
+            or "-"
+        )
+
+    pressure_value = weather_data.get(
+        "pressure_station_hpa",
+        weather_data.get("pressure_sea_level_hpa", weather_data.get("pressure")),
+    )
+    return [
+        {
+            "label": "Temperatura",
+            "value": _format_value(weather_data.get("temperature"), "C"),
+        },
+        {
+            "label": "Sensacao termica",
+            "value": _format_value(weather_data.get("feels_like"), "C"),
+        },
+        {
+            "label": "Umidade",
+            "value": _format_value(weather_data.get("humidity"), "%"),
+        },
+        {
+            "label": "Chuva",
+            "value": _format_value(weather_data.get("precipitation"), "mm"),
+        },
+        {
+            "label": "Vento",
+            "value": _format_value(weather_data.get("wind_speed"), "km/h"),
+        },
+        {
+            "label": "Pressao",
+            "value": _format_value(pressure_value, "hPa"),
+        },
+        {
+            "label": "Estacao INMET",
+            "value": station_label,
+        },
+        {
+            "label": "Periodo historico",
+            "value": requested_period or "-",
+        },
+        {
+            "label": "Principal anomalia",
+            "value": _main_historical_anomaly_text(analysis_result)
+            or "sem anomalia destacada",
+        },
+    ]
+
+
+def get_risk_badge_style(risk_level: object) -> dict[str, str]:
+    """Retorna cores do badge para um nivel de risco."""
+    normalized = str(risk_level or "").strip().lower()
+    return RISK_BADGE_STYLES.get(normalized, RISK_BADGE_STYLES["indisponivel"])
+
+
+def show_intelligent_diagnosis_section(
+    ml_prediction: dict[str, object] | None,
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> None:
+    """Mostra o diagnostico principal priorizando a camada ML."""
+    summary = build_intelligent_diagnosis_summary(
+        ml_prediction,
+        risk,
+        analysis_result,
+    )
+    st.subheader("2. Diagnóstico Inteligente")
+    with st.container(border=True):
+        st.markdown(
+            "<div class='sac-section-kicker'>Machine Learning supervisionado</div>",
+            unsafe_allow_html=True,
+        )
+        col_ml, col_rules, col_history = st.columns(3)
+        _render_risk_card(
+            col_ml,
+            "Predição ML",
+            summary["ml_risk"],
+            "Modelo treinado localmente",
+        )
+        _render_risk_card(
+            col_rules,
+            "Risco por regras",
+            summary["rule_risk"],
+            "Classificação técnica explicável",
+        )
+        col_history.markdown(
+            _html_card(
+                "Anomalia histórica",
+                summary["main_anomaly"],
+                "Comparação com INMET",
+                css_class="sac-card-muted",
+            ),
+            unsafe_allow_html=True,
+        )
+        st.write(summary["summary_text"])
+        st.caption(METHODOLOGICAL_NOTE)
+
+
+def show_ml_prediction_section(
+    weather_data: dict[str, object] | None,
+    prediction_result: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Exibe a predicao ML treinada localmente, quando disponivel."""
+    prediction_result = prediction_result or get_ml_prediction_for_dashboard(weather_data)
 
     with st.container(border=True):
         if not prediction_result.get("available"):
             st.info(str(prediction_result.get("error_message", "")))
-            return
+            st.caption(str(prediction_result.get("methodological_note", METHODOLOGICAL_NOTE)))
+            return prediction_result
 
         if prediction_result.get("prediction"):
-            col_prediction, col_model, col_metric = st.columns(3)
-            col_prediction.metric(
+            col_prediction, col_model, col_metric, col_features = st.columns(4)
+            _render_risk_card(
+                col_prediction,
                 "Risk level previsto",
-                str(prediction_result["prediction"]).upper(),
+                str(prediction_result["prediction"]),
+                "Predição supervisionada",
             )
-            col_model.metric(
-                "Modelo selecionado",
-                str(prediction_result.get("model_name") or "Nao informado"),
+            col_model.markdown(
+                _html_card(
+                    "Modelo selecionado",
+                    str(prediction_result.get("model_name") or "Nao informado"),
+                    "Treinado fora do dashboard",
+                    css_class="sac-card-ml",
+                ),
+                unsafe_allow_html=True,
             )
-            col_metric.metric(
-                "Metrica de selecao",
-                str(prediction_result.get("selection_metric") or "Nao informada"),
+            col_metric.markdown(
+                _html_card(
+                    "Metrica de selecao",
+                    str(prediction_result.get("selection_metric") or "Nao informada"),
+                    "Critério salvo no metadata",
+                    css_class="sac-card-ml",
+                ),
+                unsafe_allow_html=True,
+            )
+            feature_count = len(prediction_result.get("features_used", []))
+            col_features.markdown(
+                _html_card(
+                    "Features usadas",
+                    str(feature_count),
+                    "Variáveis do metadata",
+                    css_class="sac-card-ml",
+                ),
+                unsafe_allow_html=True,
             )
         else:
             st.info(str(prediction_result.get("error_message", "")))
@@ -420,7 +894,417 @@ def show_ml_prediction_section(weather_data: dict[str, object] | None) -> None:
             if missing_features:
                 st.write("Features ausentes: " + ", ".join(missing_features))
 
+        probability_rows = format_probability_table(
+            prediction_result.get("probabilities", {})
+        )
+        with st.expander("Probabilidades por classe"):
+            if probability_rows:
+                st.dataframe(
+                    pd.DataFrame(probability_rows),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.caption("Este modelo não disponibiliza probabilidades de classe.")
+
         st.caption(str(prediction_result.get("methodological_note", "")))
+    return prediction_result
+
+
+def show_model_comparison_section(report_dir: str | Path = "data/reports") -> None:
+    """Mostra comparacao dos modelos treinados quando ha relatorio local."""
+    report_result = load_ml_evaluation_report_for_app(str(report_dir))
+
+    with st.container(border=True):
+        if not report_result["available"]:
+            st.info(str(report_result["error_message"]))
+            st.code(ML_EVALUATION_COMMAND)
+            return
+
+        st.caption(f"Relatorio usado: {report_result['source']}")
+        rows = build_model_comparison_table(report_result["report"])
+        if rows:
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        else:
+            st.info("O relatorio ML nao possui metricas por modelo para exibir.")
+
+        summary = extract_best_model_summary(report_result["report"])
+        col_baseline, col_best, col_diff = st.columns(3)
+        col_baseline.metric(
+            "F1 macro baseline",
+            _format_metric(summary["baseline_f1_macro"]),
+        )
+        col_best.metric(
+            "F1 macro melhor modelo",
+            _format_metric(summary["best_model_f1_macro"]),
+        )
+        col_diff.metric(
+            "Diferença absoluta",
+            _format_metric(summary["absolute_difference"]),
+        )
+        if summary["best_model_name"]:
+            st.caption(
+                "Melhor modelo: "
+                f"{summary['best_model_name']} "
+                f"pela métrica {summary['selection_metric']}."
+            )
+
+
+def show_analysis_result_flow(
+    weather_data: dict[str, object],
+    risk: WeatherRisk | None,
+    prediction_result: dict[str, object] | None,
+    analysis_result: dict[str, object] | None = None,
+    history: pd.DataFrame | None = None,
+    selected_station: dict[str, object] | None = None,
+    station_label: str = "",
+    source_status: dict[str, str] | None = None,
+    requested_period: str = "",
+    station_message: str = "",
+) -> None:
+    """Exibe o fluxo simplificado: resultado, evidencias e detalhes."""
+    show_result_analysis_section(prediction_result, risk, analysis_result)
+    show_evidence_section(
+        weather_data,
+        selected_station=selected_station,
+        requested_period=requested_period,
+        analysis_result=analysis_result,
+    )
+    show_technical_details_section(
+        weather_data=weather_data,
+        risk=risk,
+        prediction_result=prediction_result,
+        analysis_result=analysis_result,
+        history=history,
+        selected_station=selected_station,
+        station_label=station_label,
+        source_status=source_status,
+        requested_period=requested_period,
+        station_message=station_message,
+    )
+
+
+def show_result_analysis_section(
+    ml_prediction: dict[str, object] | None,
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> None:
+    """Mostra a conclusao principal da consulta."""
+    summary = build_main_result_summary(ml_prediction, risk, analysis_result)
+    explanation = build_result_explanation(ml_prediction, risk, analysis_result)
+
+    st.subheader("Resultado da analise")
+    with st.container(border=True):
+        col_summary, col_explanation = st.columns([1, 1.35])
+        with col_summary:
+            _render_risk_card(
+                st,
+                "Risco previsto pela IA",
+                str(summary["final_risk"]),
+                "Machine Learning supervisionado quando disponivel",
+            )
+            metric_col_a, metric_col_b = st.columns(2)
+            metric_col_a.metric("Modelo usado", str(summary["model_name"]))
+            metric_col_b.metric("Metrica", str(summary["selection_metric"]))
+            metric_col_c, metric_col_d = st.columns(2)
+            metric_col_c.metric("Risco por regras", str(summary["rule_risk"]).upper())
+            metric_col_d.metric("Anomalias historicas", summary["anomaly_count"])
+
+        with col_explanation:
+            st.markdown("#### Por que esse resultado?")
+            st.write(explanation)
+            st.info(str(summary["recommendation"]))
+            st.caption(METHODOLOGICAL_NOTE_SHORT)
+            with st.expander("Detalhe metodologico"):
+                st.write(METHODOLOGICAL_NOTE)
+
+
+def show_evidence_section(
+    weather_data: dict[str, object],
+    selected_station: dict[str, object] | None = None,
+    requested_period: str = "",
+    analysis_result: dict[str, object] | None = None,
+) -> None:
+    """Mostra evidencias compactas usadas na analise."""
+    st.subheader("Evidencias usadas")
+    rows = build_evidence_summary(
+        weather_data,
+        selected_station=selected_station,
+        requested_period=requested_period,
+        analysis_result=analysis_result,
+    )
+    columns = st.columns(3)
+    for index, row in enumerate(rows):
+        columns[index % 3].markdown(
+            _html_card(row["label"], row["value"], "", css_class="sac-card-muted"),
+            unsafe_allow_html=True,
+        )
+
+
+def show_technical_details_section(
+    weather_data: dict[str, object],
+    risk: WeatherRisk | None,
+    prediction_result: dict[str, object] | None,
+    analysis_result: dict[str, object] | None = None,
+    history: pd.DataFrame | None = None,
+    selected_station: dict[str, object] | None = None,
+    station_label: str = "",
+    source_status: dict[str, str] | None = None,
+    requested_period: str = "",
+    station_message: str = "",
+) -> None:
+    """Agrupa os detalhes tecnicos em abas."""
+    st.subheader("Detalhes tecnicos")
+    tabs = st.tabs(
+        [
+            "Desempenho dos modelos treinados",
+            "Probabilidades por classe",
+            "Features usadas pelo modelo",
+            "Regras acionadas",
+            "Estatisticas historicas",
+            "Variaveis brutas",
+        ]
+    )
+
+    with tabs[0]:
+        show_model_comparison_section()
+
+    with tabs[1]:
+        probability_rows = format_probability_table(
+            (prediction_result or {}).get("probabilities", {})
+        )
+        if probability_rows:
+            st.dataframe(pd.DataFrame(probability_rows), width="stretch", hide_index=True)
+        else:
+            st.caption("Este modelo nao disponibiliza probabilidades de classe.")
+
+    with tabs[2]:
+        if not (prediction_result or {}).get("available"):
+            st.info(str((prediction_result or {}).get("error_message", "")))
+        features = [
+            {"Feature": feature}
+            for feature in (prediction_result or {}).get("features_used", [])
+        ]
+        if features:
+            st.dataframe(pd.DataFrame(features), width="stretch", hide_index=True)
+        missing_features = (prediction_result or {}).get("missing_features", [])
+        if missing_features:
+            st.write("Features ausentes: " + ", ".join(missing_features))
+        observations = (prediction_result or {}).get("observations", [])
+        for observation in observations:
+            st.caption(str(observation))
+
+    with tabs[3]:
+        if risk is None:
+            st.info("Classificacao por regras nao calculada para esta consulta.")
+        else:
+            show_weather_risk(risk)
+
+    with tabs[4]:
+        _show_historical_details(
+            weather_data=weather_data,
+            analysis_result=analysis_result,
+            history=history,
+            selected_station=selected_station,
+            station_label=station_label,
+            source_status=source_status,
+            requested_period=requested_period,
+            station_message=station_message,
+        )
+
+    with tabs[5]:
+        st.write("Dados atuais padronizados")
+        st.dataframe(
+            pd.DataFrame(build_current_weather_rows(weather_data)),
+            width="stretch",
+            hide_index=True,
+        )
+        st.caption(build_current_pressure_text(weather_data))
+        with st.expander("Payload atual completo"):
+            st.json(weather_data)
+        if selected_station is not None:
+            with st.expander("Estacao INMET selecionada"):
+                st.json(selected_station)
+
+
+def _render_risk_card(
+    target: Any,
+    label: str,
+    risk_level: str,
+    caption: str,
+) -> None:
+    target.markdown(
+        _html_risk_card(label, risk_level, caption),
+        unsafe_allow_html=True,
+    )
+
+
+def _html_risk_card(label: str, risk_level: str, caption: str) -> str:
+    style = get_risk_badge_style(risk_level)
+    risk_text = str(risk_level or "indisponivel")
+    return (
+        "<div class='sac-card sac-card-ml'>"
+        f"<div class='sac-card-label'>{_escape_html(label)}</div>"
+        f"<div class='sac-risk-badge' style='background:{style['background']};"
+        f"border-color:{style['border']};color:{style['text']}'>"
+        f"{_escape_html(risk_text.upper())}</div>"
+        f"<div class='sac-card-caption'>{_escape_html(caption)}</div>"
+        "</div>"
+    )
+
+
+def _html_card(
+    label: str,
+    value: str,
+    caption: str,
+    css_class: str = "",
+) -> str:
+    class_names = f"sac-card {css_class}".strip()
+    return (
+        f"<div class='{class_names}'>"
+        f"<div class='sac-card-label'>{_escape_html(label)}</div>"
+        f"<div class='sac-card-value'>{_escape_html(value)}</div>"
+        f"<div class='sac-card-caption'>{_escape_html(caption)}</div>"
+        "</div>"
+    )
+
+
+def _escape_html(value: object) -> str:
+    text = str(value)
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
+
+
+def _metrics_by_model_from_report(
+    report: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if not report:
+        return {}
+    metrics = report.get("metrics_by_model")
+    if isinstance(metrics, dict):
+        return metrics
+    metadata_metrics = _report_metadata(report).get("metrics_by_model")
+    if isinstance(metadata_metrics, dict):
+        return metadata_metrics
+    return {}
+
+
+def _report_metadata(report: dict[str, Any] | None) -> dict[str, Any]:
+    if not report:
+        return {}
+    metadata = report.get("metadata", {})
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _report_source_from_filename(filename: str) -> str:
+    if "temporal" in filename:
+        return "avaliação robusta temporal"
+    if "random" in filename:
+        return "avaliação robusta aleatória"
+    return "treinamento básico"
+
+
+def _round_metric(value: object) -> float | None:
+    numeric_value = _optional_float(value)
+    if numeric_value is None:
+        return None
+    return round(numeric_value, 4)
+
+
+def _format_metric(value: object) -> str:
+    numeric_value = _optional_float(value)
+    if numeric_value is None:
+        return "-"
+    return f"{numeric_value:.4f}"
+
+
+def _main_historical_anomaly_text(
+    analysis_result: dict[str, object] | None,
+) -> str:
+    if not analysis_result or not analysis_result.get("has_historical_data"):
+        return ""
+
+    anomalies = analysis_result.get("anomalies", [])
+    if not isinstance(anomalies, list) or not anomalies:
+        return ""
+
+    for anomaly in anomalies:
+        if not isinstance(anomaly, dict):
+            continue
+        anomaly_type = str(anomaly.get("anomaly_type", ""))
+        label = ANOMALY_LABELS.get(anomaly_type, anomaly_type)
+        reason = str(anomaly.get("reason", "")).strip()
+        if reason:
+            return f"{label}: {reason}"
+        return label
+    return ""
+
+
+def _historical_anomaly_count(analysis_result: dict[str, object] | None) -> int:
+    if not analysis_result or not analysis_result.get("has_historical_data"):
+        return 0
+    anomalies = analysis_result.get("anomalies", [])
+    return len(anomalies) if isinstance(anomalies, list) else 0
+
+
+def _attention_variable_text(
+    risk: WeatherRisk | None,
+    analysis_result: dict[str, object] | None,
+) -> str:
+    if analysis_result and analysis_result.get("has_historical_data"):
+        variables = sorted(_anomalous_variables(analysis_result))
+        labels = [
+            VARIABLE_DISPLAY.get(variable, {}).get("label", variable)
+            for variable in variables
+            if variable
+        ]
+        if labels:
+            return "As variaveis que mais chamaram atencao foram: " + ", ".join(
+                labels[:3]
+            ) + "."
+
+    if risk and risk.triggered_rules:
+        return (
+            "As regras acionadas apontam pontos de atencao em "
+            + ", ".join(str(rule) for rule in risk.triggered_rules[:2])
+            + "."
+        )
+
+    if risk and risk.variables:
+        labels = [
+            VARIABLE_DISPLAY.get(variable, {}).get("label", str(variable))
+            for variable, value in risk.variables.items()
+            if value is not None
+        ]
+        if labels:
+            return "As variaveis observadas incluem " + ", ".join(labels[:3]) + "."
+
+    return "Nenhuma variavel isolada foi destacada como anomalia principal."
+
+
+def _historical_explanation_text(
+    analysis_result: dict[str, object] | None,
+) -> str:
+    if not analysis_result or not analysis_result.get("has_historical_data"):
+        return "A comparacao historica ainda nao esta disponivel para esta consulta."
+
+    anomaly_count = _historical_anomaly_count(analysis_result)
+    if anomaly_count == 0:
+        return (
+            "A comparacao historica com o INMET nao encontrou anomalias "
+            "principais nos valores atuais."
+        )
+
+    anomaly_text = _main_historical_anomaly_text(analysis_result)
+    return (
+        f"A comparacao historica com o INMET encontrou {anomaly_count} "
+        f"anomalia(s); principal evidencia: {anomaly_text}."
+    )
 
 
 def _show_risk_reason(risk: WeatherRisk) -> None:
@@ -934,6 +1818,146 @@ def build_historical_source_status(
     }
 
 
+def show_simplified_analysis_section(
+    settings: Settings,
+    weather_data: dict[str, object] | None,
+    data_source: str,
+    risk: WeatherRisk | None,
+    start_year: int,
+    end_year: int,
+) -> None:
+    """Executa a consulta historica e mostra o fluxo compacto do dashboard."""
+    if not weather_data:
+        st.info(
+            "Carregue dados atuais por Entrada manual ou OpenWeather para "
+            "executar a analise."
+        )
+        return
+
+    prediction_result = get_ml_prediction_for_dashboard(weather_data)
+    requested_period = format_requested_period(start_year, end_year)
+    client = InmetClient(settings)
+
+    try:
+        station_catalog, historical_source = load_station_catalog_for_app(
+            settings,
+            client,
+        )
+    except InmetHistoricalDataError as error:
+        st.warning(str(error))
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            requested_period=requested_period,
+        )
+        return
+
+    metadata = (
+        get_database_metadata(settings.inmet_database_path)
+        if historical_source == "database"
+        else None
+    )
+    source_status = build_historical_source_status(historical_source, metadata)
+    station_selection_key = (
+        f"{normalize_city_name(str(weather_data.get('city', '')))}_"
+        f"{data_source}_{start_year}_{end_year}"
+    )
+    selected_station, station_message = _select_station_for_historical_flow(
+        data_source,
+        weather_data,
+        station_catalog,
+        station_selection_key,
+    )
+    if selected_station is None:
+        st.warning(station_message)
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            source_status=source_status,
+            requested_period=requested_period,
+            station_message=station_message,
+        )
+        return
+
+    station_code = str(selected_station["station_code"])
+    station_label = str(selected_station.get("station_label", station_code))
+
+    try:
+        history = load_station_history_for_app(
+            settings,
+            client,
+            station_code,
+            int(start_year),
+            int(end_year),
+            historical_source,
+        )
+    except InmetHistoricalDataError as error:
+        st.warning(str(error))
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            selected_station=selected_station,
+            station_label=station_label,
+            source_status=source_status,
+            requested_period=requested_period,
+            station_message=station_message,
+        )
+        return
+
+    if history.empty:
+        st.warning("Nenhum registro historico foi carregado para esta estacao.")
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            history=history,
+            selected_station=selected_station,
+            station_label=station_label,
+            source_status=source_status,
+            requested_period=requested_period,
+            station_message=station_message,
+        )
+        return
+
+    can_analyze, status_message = historical_analysis_status(weather_data, history)
+    if not can_analyze:
+        st.info(status_message)
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            history=history,
+            selected_station=selected_station,
+            station_label=station_label,
+            source_status=source_status,
+            requested_period=requested_period,
+            station_message=station_message,
+        )
+        return
+
+    analyzer = HistoricalAnalyzer()
+    analysis_result = analyzer.analyze(
+        weather_data,
+        history,
+        station_metadata=selected_station,
+    )
+    show_analysis_result_flow(
+        weather_data=weather_data,
+        risk=risk,
+        prediction_result=prediction_result,
+        analysis_result=analysis_result,
+        history=history,
+        selected_station=selected_station,
+        station_label=station_label,
+        source_status=source_status,
+        requested_period=requested_period,
+        station_message=station_message,
+    )
+
+
 def show_inmet_historical_section(
     settings: Settings,
     weather_data: dict[str, object] | None,
@@ -950,6 +1974,7 @@ def show_inmet_historical_section(
         )
         return
 
+    prediction_result = get_ml_prediction_for_dashboard(weather_data)
     client = InmetClient(settings)
     try:
         station_catalog, historical_source = load_station_catalog_for_app(
@@ -959,11 +1984,14 @@ def show_inmet_historical_section(
     except InmetHistoricalDataError as error:
         st.warning(str(error))
         if risk is not None:
-            st.subheader("3. Alerta por regras")
+            show_intelligent_diagnosis_section(prediction_result, risk, None)
+            st.subheader("3. Predição por Machine Learning")
+            show_ml_prediction_section(weather_data, prediction_result)
+            st.subheader("4. Comparação dos Modelos Treinados")
+            show_model_comparison_section()
+            st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
-            st.subheader("4. Previsão por Machine Learning")
-            show_ml_prediction_section(weather_data)
-            st.subheader("5. Resumo")
+            st.subheader("6. Resumo")
             st.write(build_interpretive_summary(weather_data, risk, None, None))
         return
 
@@ -987,11 +2015,14 @@ def show_inmet_historical_section(
     if selected_station is None:
         st.warning(station_message)
         if risk is not None:
-            st.subheader("3. Alerta por regras")
+            show_intelligent_diagnosis_section(prediction_result, risk, None)
+            st.subheader("3. Predição por Machine Learning")
+            show_ml_prediction_section(weather_data, prediction_result)
+            st.subheader("4. Comparação dos Modelos Treinados")
+            show_model_comparison_section()
+            st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
-            st.subheader("4. Previsão por Machine Learning")
-            show_ml_prediction_section(weather_data)
-            st.subheader("5. Resumo")
+            st.subheader("6. Resumo")
             st.write(build_interpretive_summary(weather_data, risk, None, None))
         return
 
@@ -1010,11 +2041,14 @@ def show_inmet_historical_section(
     except InmetHistoricalDataError as error:
         st.warning(str(error))
         if risk is not None:
-            st.subheader("3. Alerta por regras")
+            show_intelligent_diagnosis_section(prediction_result, risk, None)
+            st.subheader("3. Predição por Machine Learning")
+            show_ml_prediction_section(weather_data, prediction_result)
+            st.subheader("4. Comparação dos Modelos Treinados")
+            show_model_comparison_section()
+            st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
-            st.subheader("4. Previsão por Machine Learning")
-            show_ml_prediction_section(weather_data)
-            st.subheader("5. Resumo")
+            st.subheader("6. Resumo")
             st.write(
                 build_interpretive_summary(weather_data, risk, None, station_label)
             )
@@ -1023,17 +2057,44 @@ def show_inmet_historical_section(
     if history.empty:
         st.warning("Nenhum registro historico foi carregado para esta estacao.")
         if risk is not None:
-            st.subheader("3. Alerta por regras")
+            show_intelligent_diagnosis_section(prediction_result, risk, None)
+            st.subheader("3. Predição por Machine Learning")
+            show_ml_prediction_section(weather_data, prediction_result)
+            st.subheader("4. Comparação dos Modelos Treinados")
+            show_model_comparison_section()
+            st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
-            st.subheader("4. Previsão por Machine Learning")
-            show_ml_prediction_section(weather_data)
-            st.subheader("5. Resumo")
+            st.subheader("6. Resumo")
             st.write(
                 build_interpretive_summary(weather_data, risk, None, station_label)
             )
         return
 
-    st.subheader("2. Base historica associada")
+    averages = history[
+        ["temperature", "humidity", "pressure", "wind_speed", "precipitation"]
+    ].mean()
+
+    can_analyze, status_message = historical_analysis_status(weather_data, history)
+    if not can_analyze:
+        st.info(status_message)
+        return
+
+    analyzer = HistoricalAnalyzer()
+    analysis_result = analyzer.analyze(
+        weather_data,
+        history,
+        station_metadata=selected_station,
+    )
+
+    show_intelligent_diagnosis_section(prediction_result, risk, analysis_result)
+
+    st.subheader("3. Predição por Machine Learning")
+    show_ml_prediction_section(weather_data, prediction_result)
+
+    st.subheader("4. Comparação dos Modelos Treinados")
+    show_model_comparison_section()
+
+    st.subheader("5. Base historica associada")
     with st.container(border=True):
         _show_station_selection_summary(
             selected_station,
@@ -1057,27 +2118,7 @@ def show_inmet_historical_section(
                 format_requested_period(start_year, end_year),
             )
 
-    if risk is not None:
-        st.subheader("3. Alerta por regras")
-        show_weather_risk(risk)
-
-    st.subheader("4. Comparacao historica")
-
-    averages = history[
-        ["temperature", "humidity", "pressure", "wind_speed", "precipitation"]
-    ].mean()
-
-    can_analyze, status_message = historical_analysis_status(weather_data, history)
-    if not can_analyze:
-        st.info(status_message)
-        return
-
-    analyzer = HistoricalAnalyzer()
-    analysis_result = analyzer.analyze(
-        weather_data,
-        history,
-        station_metadata=selected_station,
-    )
+    st.subheader("6. Comparacao historica")
     with st.container(border=True):
         _show_historical_analysis_result(weather_data, analysis_result)
         with st.expander("Registros carregados e medias historicas"):
@@ -1104,11 +2145,12 @@ def show_inmet_historical_section(
                 "A comparacao usa grnd_level da OpenWeather quando disponivel "
                 "ou estima a pressao pela altitude da estacao."
             )
-    st.subheader("5. Previsão por Machine Learning")
-    show_ml_prediction_section(weather_data)
 
     if risk is not None:
-        st.subheader("6. Resumo interpretativo")
+        st.subheader("7. Explicabilidade Técnica por Regras")
+        show_weather_risk(risk)
+
+        st.subheader("8. Resumo interpretativo")
         with st.container(border=True):
             st.write(
                 build_interpretive_summary(
@@ -1330,6 +2372,82 @@ def _show_historical_analysis_result(
         st.write(build_pressure_reference_details(weather_data, pressure_comparison))
 
 
+def _show_historical_details(
+    weather_data: dict[str, object] | None,
+    analysis_result: dict[str, object] | None,
+    history: pd.DataFrame | None,
+    selected_station: dict[str, object] | None,
+    station_label: str,
+    source_status: dict[str, str] | None,
+    requested_period: str,
+    station_message: str,
+) -> None:
+    if selected_station is not None:
+        record_count = len(history) if history is not None else 0
+        _show_station_selection_summary(
+            selected_station,
+            station_label or str(selected_station.get("station_code", "-")),
+            (source_status or {}).get("source_label", "-"),
+            requested_period,
+            record_count,
+        )
+        if station_message:
+            st.caption(station_message)
+    else:
+        st.info("Estacao INMET nao selecionada para esta consulta.")
+
+    if source_status:
+        with st.expander("Fonte historica usada"):
+            st.write(source_status.get("status", ""))
+            st.write(source_status.get("details", ""))
+            if source_status.get("guidance"):
+                st.write(source_status["guidance"])
+                st.code("python scripts/download_inmet_database.py")
+
+    if history is not None and not history.empty:
+        with st.expander("Registros historicos carregados"):
+            _show_loaded_history_summary(
+                history,
+                selected_station,
+                station_label or "-",
+                (source_status or {}).get("source_label", "-"),
+                requested_period,
+            )
+            averages = history[
+                [
+                    "temperature",
+                    "humidity",
+                    "pressure",
+                    "wind_speed",
+                    "precipitation",
+                ]
+            ].mean()
+            metric_columns = st.columns(5)
+            metric_columns[0].metric(
+                "Temperatura media",
+                f"{averages['temperature']:.1f} C",
+            )
+            metric_columns[1].metric("Umidade media", f"{averages['humidity']:.1f}%")
+            metric_columns[2].metric(
+                "Pressao media",
+                f"{averages['pressure']:.1f} hPa",
+            )
+            metric_columns[3].metric(
+                "Vento medio",
+                f"{averages['wind_speed']:.1f} km/h",
+            )
+            metric_columns[4].metric(
+                "Precipitacao media",
+                f"{averages['precipitation']:.1f} mm",
+            )
+
+    if analysis_result is None:
+        st.info("Comparacao historica nao executada para esta consulta.")
+        return
+
+    _show_historical_analysis_result(weather_data, analysis_result)
+
+
 def _first_variable(anomaly: dict[str, object]) -> str:
     variables = anomaly.get("variables_used", [])
     if isinstance(variables, list) and variables:
@@ -1471,23 +2589,185 @@ def apply_dashboard_style() -> None:
     st.markdown(
         """
         <style>
+        .stApp {
+            background: linear-gradient(135deg, #111827 0%, #1f2937 54%, #0f172a 100%);
+            color: #e5edf6;
+        }
+        .block-container {
+            padding-top: 2.8rem;
+            padding-bottom: 3rem;
+        }
+        .sac-hero {
+            border: 1px solid rgba(125, 211, 252, 0.25);
+            border-radius: 14px;
+            padding: 1.4rem 1.6rem;
+            margin-top: 1.4rem;
+            margin-bottom: 1.2rem;
+            background:
+                linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.82)),
+                linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(20, 184, 166, 0.10));
+            box-shadow: 0 18px 45px rgba(2, 6, 23, 0.26);
+        }
+        .sac-hero h1 {
+            margin: 0.2rem 0 0.45rem 0;
+            font-size: clamp(2rem, 4vw, 3.4rem);
+            line-height: 1.02;
+            letter-spacing: 0;
+            color: #f8fafc;
+        }
+        .sac-hero p {
+            margin: 0;
+            max-width: 920px;
+            color: #cbd5e1;
+            font-size: 1.02rem;
+        }
+        .sac-pill-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        .sac-pill {
+            border: 1px solid rgba(125, 211, 252, 0.28);
+            background: rgba(8, 47, 73, 0.36);
+            color: #bae6fd;
+            border-radius: 999px;
+            padding: 0.34rem 0.72rem;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+        .sac-section-kicker {
+            color: #67e8f9;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.6rem;
+            text-transform: uppercase;
+        }
+        .sac-card {
+            min-height: 118px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 12px;
+            padding: 1rem;
+            background: rgba(30, 41, 59, 0.68);
+            box-shadow: 0 14px 30px rgba(2, 6, 23, 0.20);
+        }
+        .sac-card-ml {
+            border-color: rgba(34, 211, 238, 0.30);
+            background: linear-gradient(180deg, rgba(22, 78, 99, 0.48), rgba(30, 41, 59, 0.72));
+        }
+        .sac-card-muted {
+            background: rgba(30, 41, 59, 0.52);
+            min-height: 92px;
+        }
+        .sac-card-label {
+            color: #94a3b8;
+            font-size: 0.80rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .sac-card-value {
+            color: #f8fafc;
+            font-size: 1.45rem;
+            line-height: 1.12;
+            font-weight: 800;
+            margin-top: 0.5rem;
+        }
+        .sac-card-caption {
+            color: #cbd5e1;
+            font-size: 0.86rem;
+            margin-top: 0.55rem;
+        }
+        .sac-risk-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid;
+            border-radius: 999px;
+            padding: 0.42rem 0.72rem;
+            margin-top: 0.62rem;
+            font-size: 1.02rem;
+            font-weight: 900;
+            letter-spacing: 0;
+        }
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background: rgba(38, 39, 48, 0.72);
-            border-color: rgba(130, 148, 170, 0.28);
-            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.70);
+            border-color: rgba(148, 163, 184, 0.22);
+            border-radius: 12px;
+            box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18);
         }
         div[data-testid="stMetric"] {
-            background: rgba(17, 24, 39, 0.24);
-            border-radius: 8px;
-            padding: 0.45rem 0.55rem;
+            background: rgba(30, 41, 59, 0.42);
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            border-radius: 10px;
+            padding: 0.55rem 0.65rem;
         }
         .stAlert {
-            border-radius: 8px;
+            border-radius: 10px;
+        }
+        h2, h3 {
+            letter-spacing: 0;
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+def show_dashboard_header() -> None:
+    """Exibe cabecalho visual para apresentacao do TCC."""
+    st.markdown(
+        """
+        <section class="sac-hero">
+            <div class="sac-section-kicker">TCC | Machine Learning supervisionado</div>
+            <h1>Sistema Inteligente de Alerta Climático</h1>
+            <p>
+                Dados atuais da OpenWeather, histórico INMET e modelos supervisionados
+                para apoiar a leitura técnica de risco climático por cidade.
+            </p>
+            <div class="sac-pill-row">
+                <span class="sac-pill">OpenWeather atual</span>
+                <span class="sac-pill">INMET histórico</span>
+                <span class="sac-pill">RiskClassifier explicável</span>
+                <span class="sac-pill">Predição ML local</span>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def show_dashboard_header() -> None:
+    """Exibe cabecalho visual simples para apresentacao do TCC."""
+    st.markdown(
+        """
+        <section class="sac-hero">
+            <div class="sac-section-kicker">TCC | Machine Learning supervisionado</div>
+            <h1>Sistema Inteligente de Alerta Climatico</h1>
+            <p>
+                Sistema academico que consulta dados meteorologicos atuais,
+                compara com historico do INMET e aplica Machine Learning
+                supervisionado para apoiar a classificacao de risco climatico.
+            </p>
+            <div class="sac-pill-row">
+                <span class="sac-pill">Consulta por cidade</span>
+                <span class="sac-pill">ML supervisionado local</span>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def show_initial_state_guidance() -> None:
+    """Mostra orientacao curta antes da primeira busca."""
+    with st.container(border=True):
+        st.markdown("#### Fluxo da consulta")
+        st.write(
+            "Busque uma cidade, confira o resultado principal e abra os detalhes "
+            "tecnicos apenas quando precisar ver regras, historico, features ou "
+            "desempenho dos modelos."
+        )
 
 
 def main() -> None:
@@ -1496,16 +2776,10 @@ def main() -> None:
 
     st.set_page_config(page_title="Sistema de Alerta Climatico", layout="wide")
     apply_dashboard_style()
-    st.title("Sistema Inteligente de Alerta Climatico")
-    st.write(
-        "Consulta dados atuais da OpenWeather, associa uma estacao historica "
-        "do INMET e apresenta alerta por regras e previsao ML local."
-    )
-    st.caption(
-        "O modelo ML e carregado apenas quando existir em data/models/."
-    )
+    show_dashboard_header()
 
-    query, submitted = build_query_form(settings)
+    form_is_compact = bool(st.session_state.get("dashboard_query"))
+    query, submitted = build_query_form(settings, compact=form_is_compact)
     with st.expander("Opcao secundaria: entrada manual de dados atuais"):
         st.caption(
             "Use apenas quando nao houver chave da OpenWeather ou para demonstrar "
@@ -1550,24 +2824,15 @@ def main() -> None:
     weather_data = st.session_state.get("dashboard_weather_data")
 
     if not active_query or not weather_data:
-        st.info("Preencha o formulario e clique em buscar para iniciar a analise.")
+        show_initial_state_guidance()
         return
 
     active_start_year = int(active_query["start_year"])
     active_end_year = int(active_query["end_year"])
     active_data_source = str(active_query["data_source"])
 
-    st.subheader("1. Dados atuais")
-    with st.container(border=True):
-        st.caption(
-            "Consulta exibida: "
-            f"{weather_data.get('city', '-')}, "
-            f"{format_requested_period(active_start_year, active_end_year)}."
-        )
-        show_weather_data(weather_data)
-
     risk = classify_weather_risk(weather_data)
-    show_inmet_historical_section(
+    show_simplified_analysis_section(
         settings,
         weather_data,
         active_data_source,

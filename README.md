@@ -521,35 +521,63 @@ data/reports/risk_level_robust_confusion_matrix_random.csv
 Esses relatorios sao gerados localmente e nao sao versionados. O diretorio
 `data/reports/` permanece ignorado pelo Git.
 
-## Previsão por Machine Learning no Dashboard
+## Camada de Machine Learning Supervisionado no Dashboard
 
-O dashboard pode exibir uma previsao de `risk_level` usando o modelo treinado
-localmente. Ele nao treina modelos durante a renderizacao da tela; apenas tenta
-carregar estes arquivos:
+O dashboard possui uma camada de Machine Learning supervisionado para predizer
+`risk_level` a partir dos dados meteorologicos atuais. Ele nao usa IA
+generativa e nao treina modelos durante a renderizacao da tela; apenas tenta
+carregar estes arquivos locais:
 
 ```text
 data/models/risk_level_model.joblib
 data/models/risk_level_model_metadata.json
 ```
 
-Para gerar a base e treinar o modelo no ambiente local:
+Para gerar a base, treinar o modelo, avaliar os candidatos e abrir o dashboard:
 
 ```powershell
 python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 --stations A001,A101,A312
 python scripts/train_ml_models.py
+python scripts/evaluate_ml_models.py --split temporal --train-end-year 2024 --test-start-year 2025
+streamlit run app/streamlit_app.py
 ```
 
-Depois disso, execute o dashboard:
+Na tela, o fluxo foi simplificado para uma experiencia de consulta:
+
+- antes da busca, o dashboard mostra um banner, o formulario e uma explicacao
+  curta do fluxo;
+- depois da busca, a primeira area exibida e `Resultado da analise`, com a
+  predicao de Machine Learning supervisionado, o risco por regras, o modelo
+  usado, a metrica de selecao e a quantidade de anomalias historicas;
+- ao lado do resultado, a area `Por que esse resultado?` explica de forma
+  curta se o modelo e as regras concordaram ou divergiram, quais variaveis
+  chamaram atencao e o que a comparacao historica encontrou;
+- `Evidencias usadas` mostra cards compactos com temperatura, sensacao termica,
+  umidade, chuva, vento, pressao, estacao INMET, periodo historico e principal
+  anomalia;
+- `Detalhes tecnicos` concentra informacoes mais pesadas em abas: desempenho
+  dos modelos treinados, probabilidades por classe, features usadas pelo
+  modelo, regras acionadas, estatisticas historicas e variaveis brutas.
+
+A comparacao dos demais modelos no dashboard e apenas de desempenho registrado
+nos relatorios locais. A predicao atual usa somente o modelo principal salvo em
+`data/models/risk_level_model.joblib`.
+
+O dashboard prefere o relatorio temporal de avaliacao robusta:
+
+```text
+data/reports/risk_level_robust_evaluation_temporal_report.json
+```
+
+Se ele nao existir, tenta o relatorio random e depois o relatorio basico de
+treinamento. Quando nenhum relatorio existe, a tela orienta gerar:
 
 ```powershell
-streamlit run app\streamlit_app.py
+python scripts/evaluate_ml_models.py --split temporal --train-end-year 2024 --test-start-year 2025
 ```
 
-A secao `Previsão por Machine Learning` aparece depois do alerta por regras e
-da comparacao historica. Quando o modelo existe, ela mostra o `risk_level`
-previsto, o nome do modelo selecionado, a metrica usada na selecao e as
-features usadas na predicao. Quando o modelo nao existe, o dashboard continua
-funcionando e exibe uma mensagem orientando a gerar o dataset e treinar com
+Quando o modelo nao existe, o dashboard continua funcionando e exibe uma
+mensagem orientando a gerar o dataset e treinar com
 `python scripts/train_ml_models.py`.
 
 Cada ambiente precisa treinar o modelo localmente ou receber esses arquivos por
@@ -558,16 +586,18 @@ datasets em `data/processed/` e os relatorios em `data/reports/` nao sao
 versionados no Git.
 
 Limite metodologico: os rotulos usados no treinamento sao derivados do
-`RiskClassifier`. A previsao ML representa uma reproducao aprendida dessa
-classificacao tecnica por regras, nao uma validacao contra eventos reais
-oficiais de desastre.
+`RiskClassifier`. A predicao ML representa uma reproducao aprendida dessa
+classificacao tecnica por regras. Essa escolha torna o prototipo interpretavel
+para a banca, mas as metricas e predicoes nao representam validacao contra
+eventos reais oficiais de desastre.
 
 ## Classificador por Regras
 
 A etapa atual implementa um classificador inicial por regras em
 `src/alerts/risk_classifier.py`. Ele usa os dados meteorologicos atuais
 padronizados, vindos da `Entrada manual` ou da `OpenWeather`, para gerar uma
-saida explicavel antes da etapa de aprendizado de maquina.
+classificacao tecnica explicavel. Esses rotulos tambem servem como base
+supervisionada inicial para o treinamento dos modelos.
 
 A resposta do classificador contem:
 
@@ -588,7 +618,9 @@ lista de evidencias.
 Essas regras sao heuristicas iniciais do prototipo academico. Elas nao
 substituem alertas oficiais de defesa civil ou de orgaos meteorologicos. O
 INMET historico continua separado como base de consulta, comparacao e futura
-modelagem; ele nao gera alerta atual sozinho nesta etapa.
+modelagem; ele nao gera alerta atual sozinho nesta etapa. No dashboard, as
+regras ficam nos detalhes tecnicos como explicabilidade da classificacao e
+ajudam a justificar os rotulos aprendidos pelos modelos.
 
 ## Comparacao Historica no Dashboard
 
@@ -606,16 +638,13 @@ mais proxima no catalogo local do INMET. Se as coordenadas nao estiverem
 disponiveis, tenta encontrar uma estacao pelo nome da cidade. Depois carrega o
 historico da estacao no intervalo selecionado e executa o `HistoricalAnalyzer`.
 
-Na tela, o sistema mostra o fluxo executado:
+Na tela, o sistema prioriza o resultado principal da consulta:
 
-- dados atuais obtidos via OpenWeather;
-- cidade, pais e periodo historico usados na consulta;
-- estacao INMET associada automaticamente;
-- fonte historica usada, priorizando DuckDB e usando ZIPs locais como fallback;
-- alerta atual por regras explicaveis;
-- comparacao estatistica com o historico INMET;
-- previsão ML local quando houver modelo treinado;
-- resumo interpretativo final em linguagem simples.
+- `Resultado da analise`, com a conclusao supervisionada e a explicacao curta;
+- `Evidencias usadas`, com os valores meteorologicos e a referencia historica;
+- `Detalhes tecnicos`, com regras acionadas, estatisticas historicas, features
+  do modelo, probabilidades por classe e comparacao de desempenho dos modelos
+  treinados quando houver relatorios locais.
 
 A estacao manual continua disponivel em `Opcao avancada: alterar estacao INMET
 manualmente`. Ela serve para corrigir a associacao automatica ou para escolher
@@ -629,18 +658,17 @@ O app mostra nome da estacao, UF, codigo, altitude quando disponivel, distancia
 aproximada ate a cidade atual quando a associacao usa coordenadas, periodo
 carregado, quantidade de registros e fonte usada (`DuckDB` ou `ZIPs locais`).
 Quando ha dados atuais e historico, o `HistoricalAnalyzer` calcula anomalias
-estatisticas e exibe:
+estatisticas e o dashboard deixa os detalhes tecnicos em abas:
 
 - anomalias historicas identificadas, com tipo, severidade, valor atual,
   referencia historica e justificativa;
-- resumo interpretativo com a leitura final da condicao atual;
 - percentis e estatisticas historicas em expander tecnico;
 - detalhes tecnicos da pressao atmosferica em um expander.
 
-Essa comparacao historica complementa o alerta principal por regras. Ela ajuda
-a explicar se o dado atual esta fora do padrao observado para a estacao. A
-previsão ML aparece em secao separada e nao substitui o classificador por
-regras nem alertas oficiais.
+Essa comparacao historica complementa o diagnostico principal. Ela ajuda a
+explicar se o dado atual esta fora do padrao observado para a estacao. A
+predicao ML aparece no resultado principal e as regras ficam como
+explicabilidade tecnica. Nenhuma dessas camadas substitui alertas oficiais.
 
 A pressao segue o mesmo cuidado de referencial descrito acima: o historico do
 INMET usa pressao ao nivel da estacao. Quando a OpenWeather fornece
@@ -656,18 +684,20 @@ estacao.
 Roteiro curto para apresentacao do TCC:
 
 1. Abrir o dashboard e apresentar o objetivo: dado atual por cidade,
-   comparacao com historico INMET e alerta inicial por regras.
+   comparacao com historico INMET e Machine Learning supervisionado.
 2. Explicar as fontes: OpenWeather como dado atual e INMET como base historica.
 3. Informar uma cidade, por exemplo `Manaus`, selecionar o periodo historico,
    por exemplo `2025` a `2026`, e clicar em `Buscar dados e comparar com
    historico`.
-4. Mostrar os dados atuais, a estacao INMET associada e a fonte historica usada.
-5. Apresentar o alerta atual por regras, com justificativa e recomendacoes.
-6. Mostrar a secao `Previsão por Machine Learning` quando existir modelo local.
-7. Abrir os expanders apenas se a banca pedir detalhes de variaveis, percentis,
-   pressao normalizada, regras acionadas ou features usadas pelo modelo.
-8. Fechar com o `Resumo interpretativo`, reforcando que a previsao ML reproduz
-   rotulos tecnicos derivados de regras e nao substitui alertas oficiais.
+4. Apresentar `Resultado da analise` como conclusao principal.
+5. Explicar a coluna `Por que esse resultado?`, destacando concordancia ou
+   divergencia entre ML supervisionado e regras tecnicas.
+6. Mostrar `Evidencias usadas` para localizar os valores meteorologicos,
+   estacao INMET e anomalia principal.
+7. Abrir `Detalhes tecnicos` apenas se a banca pedir metricas dos modelos,
+   probabilidades, features, regras, percentis ou variaveis brutas.
+8. Reforcar a observacao metodologica: a predicao ML reproduz rotulos tecnicos
+   derivados de regras e nao substitui alertas oficiais.
 
 ## Instalacao
 
@@ -699,10 +729,9 @@ com esse novo periodo. Se o ano inicial for maior que o ano final, o app mostra
 um erro amigavel e nao executa a busca.
 
 Na tela principal, os detalhes tecnicos ficam em expanders: variaveis brutas,
-regras acionadas, percentis, pressao normalizada e registros historicos
-carregados. Quando houver modelo treinado localmente, a tela tambem mostra as
-features usadas na previsao ML. Os dados historicos nao geram alerta climatico
-diretamente.
+regras acionadas, percentis, pressao normalizada, registros historicos
+carregados, features usadas na predicao ML e probabilidades por classe quando
+disponiveis. Os dados historicos nao geram alerta climatico diretamente.
 
 ## Testes
 

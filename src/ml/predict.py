@@ -7,6 +7,7 @@ import joblib
 import pandas as pd
 
 from src.ml.train import ML_FEATURE_COLUMNS
+from src.ml.train import RISK_LEVEL_LABELS
 
 
 DEFAULT_MODEL_PATH = Path("data/models/risk_level_model.joblib")
@@ -54,6 +55,7 @@ def load_model_bundle(
         "model_name": metadata.get("selected_model_name"),
         "selection_metric": metadata.get("metric_used"),
         "features_used": list(metadata.get("features") or ML_FEATURE_COLUMNS),
+        "labels": list(metadata.get("labels") or RISK_LEVEL_LABELS),
         "missing_features": [],
         "methodological_note": METHODOLOGICAL_NOTE,
         "error_message": "",
@@ -124,8 +126,10 @@ def predict_risk_level(
         "model_name": bundle.get("model_name"),
         "selection_metric": bundle.get("selection_metric"),
         "features_used": list(bundle.get("features_used") or ML_FEATURE_COLUMNS),
+        "labels": list(bundle.get("labels") or RISK_LEVEL_LABELS),
         "missing_features": list(bundle.get("missing_features") or []),
         "observations": [],
+        "probabilities": {},
         "methodological_note": METHODOLOGICAL_NOTE,
         "error_message": str(bundle.get("error_message") or ""),
     }
@@ -150,8 +154,39 @@ def predict_risk_level(
         return base_result
 
     base_result["prediction"] = str(prediction)
+    base_result["probabilities"] = _predict_probabilities(
+        bundle["model"],
+        feature_result["features"],
+        base_result["labels"],
+    )
     base_result["error_message"] = ""
     return base_result
+
+
+def _predict_probabilities(
+    model: Any,
+    features: pd.DataFrame,
+    labels: list[str],
+) -> dict[str, float]:
+    if not hasattr(model, "predict_proba"):
+        return {}
+
+    try:
+        probabilities = model.predict_proba(features)[0]
+    except (AttributeError, ValueError, TypeError):
+        return {}
+
+    model_labels = [str(label) for label in getattr(model, "classes_", labels)]
+    probability_by_label = {
+        label: float(probabilities[index])
+        for index, label in enumerate(model_labels)
+        if index < len(probabilities)
+    }
+    return {
+        label: probability_by_label[label]
+        for label in labels
+        if label in probability_by_label
+    }
 
 
 def _feature_value(
@@ -216,6 +251,7 @@ def _unavailable_result(error_message: str) -> dict[str, Any]:
         "model_name": None,
         "selection_metric": None,
         "features_used": ML_FEATURE_COLUMNS,
+        "labels": RISK_LEVEL_LABELS,
         "missing_features": [],
         "methodological_note": METHODOLOGICAL_NOTE,
         "error_message": error_message,

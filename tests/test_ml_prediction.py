@@ -25,9 +25,15 @@ FEATURES = [
 
 
 class FakeModel:
+    classes_ = ["baixo", "moderado", "alto", "critico"]
+
     def predict(self, features: pd.DataFrame) -> list[str]:
         assert list(features.columns) == FEATURES
         return ["alto"]
+
+    def predict_proba(self, features: pd.DataFrame) -> list[list[float]]:
+        assert list(features.columns) == FEATURES
+        return [[0.05, 0.15, 0.70, 0.10]]
 
 
 def weather_data() -> dict[str, object]:
@@ -54,6 +60,7 @@ def model_bundle(model=None) -> dict[str, object]:
         "model_name": "random_forest",
         "selection_metric": "f1_macro",
         "features_used": FEATURES,
+        "labels": ["baixo", "moderado", "alto", "critico"],
         "missing_features": [],
         "methodological_note": METHODOLOGICAL_NOTE,
         "error_message": "",
@@ -151,6 +158,12 @@ def test_predict_risk_level_returns_expected_risk_level() -> None:
     assert result["prediction"] == "alto"
     assert result["model_name"] == "random_forest"
     assert result["selection_metric"] == "f1_macro"
+    assert result["probabilities"] == {
+        "baixo": 0.05,
+        "moderado": 0.15,
+        "alto": 0.70,
+        "critico": 0.10,
+    }
 
 
 def test_dashboard_helper_does_not_break_without_model() -> None:
