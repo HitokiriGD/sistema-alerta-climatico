@@ -18,8 +18,10 @@ METHODOLOGICAL_NOTE = (
     "não validação contra eventos reais oficiais."
 )
 MODEL_NOT_FOUND_MESSAGE = (
-    "Modelo ML ainda não encontrado localmente. Gere o dataset e treine o "
-    "modelo com python scripts/train_ml_models.py."
+    "Modelo ML ainda nao encontrado localmente. Gere o dataset com "
+    "python scripts/build_ml_dataset.py e treine o modelo com "
+    "python scripts/train_ml_models.py. Em uma etapa futura, esses artefatos "
+    "tambem podem ser publicados em uma GitHub Release."
 )
 
 

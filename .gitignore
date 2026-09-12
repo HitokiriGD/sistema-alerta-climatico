@@ -14,5 +14,7 @@ data/processed/*.csv
 .DS_Store
 *.zip
 *.har
-*.duckdb
+*.duckdb*
 *.joblib
+*.parquet
+*.csv

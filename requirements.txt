@@ -4,6 +4,7 @@ scikit-learn
 streamlit
 requests
 python-dotenv
+joblib
 xgboost
 pytest
 duckdb

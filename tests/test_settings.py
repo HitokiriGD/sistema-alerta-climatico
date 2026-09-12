@@ -1,9 +1,11 @@
 from src.config.settings import BRAZILIAN_CAPITALS
 from src.config.settings import load_settings
 from src.config.settings import parse_openweather_collection_cities
+from src.config.settings import sanitize_sensitive_text
 
 
 def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
+    monkeypatch.setattr("src.config.settings._read_streamlit_secret", lambda key: "")
     monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
     monkeypatch.delenv("DEFAULT_CITY", raising=False)
     monkeypatch.delenv("DEFAULT_COUNTRY", raising=False)
@@ -125,6 +127,38 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     assert settings.openweather_retention_days == 90
     assert settings.openweather_max_rows == 5000
     assert settings.openweather_store_raw_payload is True
+
+
+def test_load_settings_reads_streamlit_secrets_when_env_missing(monkeypatch) -> None:
+    monkeypatch.delenv("OPENWEATHER_API_KEY", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    secret_values = {
+        "OPENWEATHER_API_KEY": "secret-openweather",
+        "DATABASE_URL": "postgresql://user:secret@example/db",
+    }
+    monkeypatch.setattr(
+        "src.config.settings._read_streamlit_secret",
+        lambda key: secret_values.get(key, ""),
+    )
+
+    settings = load_settings(load_dotenv_file=False)
+
+    assert settings.openweather_api_key == "secret-openweather"
+    assert settings.database_url == "postgresql://user:secret@example/db"
+
+
+def test_sanitize_sensitive_text_hides_configured_values(monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_token")
+
+    message = sanitize_sensitive_text(
+        "Falha usando ghp_secret_token e postgresql://user:secret@example/db",
+        sensitive_values=["postgresql://user:secret@example/db"],
+    )
+
+    assert "ghp_secret_token" not in message
+    assert "postgresql://user:secret@example/db" not in message
+    assert "[valor sensivel oculto]" in message
 
 
 def test_parse_openweather_collection_cities_handles_spaces() -> None:
