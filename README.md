@@ -76,6 +76,14 @@ INMET_DATABASE_RELEASE_REPO=HitokiriGD/sistema-alerta-climatico
 INMET_DATABASE_RELEASE_TAG=inmet-db-v1
 INMET_DATABASE_ASSET_NAME=inmet_historical.duckdb
 INMET_DATABASE_SHA256=2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe
+ML_ARTIFACTS_RELEASE_REPO=HitokiriGD/sistema-alerta-climatico
+ML_ARTIFACTS_RELEASE_TAG=ml-artifacts-v1
+ML_MODEL_ASSET_NAME=risk_level_model.joblib
+ML_MODEL_METADATA_ASSET_NAME=risk_level_model_metadata.json
+ML_EVALUATION_REPORT_ASSET_NAME=risk_level_robust_evaluation_temporal_report.json
+ML_MODEL_SHA256=COLE_AQUI_O_SHA256_DO_JOBLIB
+ML_MODEL_METADATA_SHA256=COLE_AQUI_O_SHA256_DO_METADATA_JSON
+ML_EVALUATION_REPORT_SHA256=COLE_AQUI_O_SHA256_DO_REPORT_JSON
 GITHUB_TOKEN=
 ```
 
@@ -576,9 +584,10 @@ treinamento. Quando nenhum relatorio existe, a tela orienta gerar:
 python scripts/evaluate_ml_models.py --split temporal --train-end-year 2024 --test-start-year 2025
 ```
 
-Quando o modelo nao existe, o dashboard continua funcionando e exibe uma
-mensagem orientando a gerar o dataset e treinar com
-`python scripts/train_ml_models.py`.
+Quando o modelo nao existe, o dashboard continua funcionando. No deploy, ele
+tenta baixar modelo, metadados e relatorio da GitHub Release configurada. Se o
+download nao estiver configurado ou falhar, a tela orienta gerar o dataset e
+treinar com `python scripts/train_ml_models.py`.
 
 Cada ambiente precisa treinar o modelo localmente ou receber esses arquivos por
 fora do repositorio. O modelo `*.joblib`, os metadados em `data/models/`, os
@@ -614,9 +623,17 @@ INMET_DATABASE_RELEASE_REPO = "HitokiriGD/sistema-alerta-climatico"
 INMET_DATABASE_RELEASE_TAG = "inmet-db-v1"
 INMET_DATABASE_ASSET_NAME = "inmet_historical.duckdb"
 INMET_DATABASE_SHA256 = "sha256_do_asset"
+ML_ARTIFACTS_RELEASE_REPO = "HitokiriGD/sistema-alerta-climatico"
+ML_ARTIFACTS_RELEASE_TAG = "ml-artifacts-v1"
+ML_MODEL_ASSET_NAME = "risk_level_model.joblib"
+ML_MODEL_METADATA_ASSET_NAME = "risk_level_model_metadata.json"
+ML_EVALUATION_REPORT_ASSET_NAME = "risk_level_robust_evaluation_temporal_report.json"
+ML_MODEL_SHA256 = "sha256_do_joblib"
+ML_MODEL_METADATA_SHA256 = "sha256_do_metadata_json"
+ML_EVALUATION_REPORT_SHA256 = "sha256_do_report_json"
 ```
 
-`GITHUB_TOKEN` so e necessario se o repositorio ou a release do DuckDB forem
+`GITHUB_TOKEN` so e necessario se o repositorio ou alguma release forem
 privados. `DATABASE_URL` so e necessario para a coleta continua em
 Supabase/Postgres; a consulta do dashboard nao deve imprimir esse valor.
 
@@ -633,6 +650,26 @@ permitir leitura do asset sem expor o token no app. Se o download falhar, a
 demo continua com dados atuais da OpenWeather, regras tecnicas e Machine
 Learning quando disponivel, mas sem comparacao historica INMET.
 
+Os artefatos de Machine Learning tambem nao ficam versionados. No primeiro uso,
+quando algum arquivo estiver ausente, o dashboard tenta baixar da release:
+
+```text
+HitokiriGD/sistema-alerta-climatico | tag ml-artifacts-v1
+```
+
+Arquivos esperados:
+
+- `data/models/risk_level_model.joblib`;
+- `data/models/risk_level_model_metadata.json`;
+- `data/reports/risk_level_robust_evaluation_temporal_report.json`.
+
+O download usa os assets configurados por `ML_MODEL_ASSET_NAME`,
+`ML_MODEL_METADATA_ASSET_NAME` e `ML_EVALUATION_REPORT_ASSET_NAME`. Os hashes
+`ML_MODEL_SHA256`, `ML_MODEL_METADATA_SHA256` e
+`ML_EVALUATION_REPORT_SHA256` sao validados quando configurados. Se o download
+falhar, o app continua funcionando com classificacao tecnica por regras,
+OpenWeather e historico INMET quando disponivel.
+
 Arquivos grandes e sensiveis nao sao versionados:
 
 - `.env`;
@@ -644,8 +681,8 @@ Arquivos grandes e sensiveis nao sao versionados:
 O dashboard abre em tres niveis:
 
 1. Sem DuckDB, sem modelo e sem relatorio: a tela abre e orienta como baixar ou
-   gerar os artefatos. Ao executar a analise historica, tenta baixar o DuckDB
-   automaticamente da release configurada.
+   gerar os artefatos. Ao executar a analise, tenta baixar o DuckDB e os
+   artefatos ML automaticamente das releases configuradas.
 2. Com DuckDB e OpenWeather: consulta atual e comparacao historica funcionam.
 3. Com DuckDB, modelo e relatorio: a demo completa exibe ML, historico e
    comparacao dos modelos.

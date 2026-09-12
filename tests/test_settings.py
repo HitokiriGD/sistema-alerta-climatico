@@ -21,6 +21,14 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
     monkeypatch.delenv("INMET_DATABASE_RELEASE_TAG", raising=False)
     monkeypatch.delenv("INMET_DATABASE_ASSET_NAME", raising=False)
     monkeypatch.delenv("INMET_DATABASE_SHA256", raising=False)
+    monkeypatch.delenv("ML_ARTIFACTS_RELEASE_REPO", raising=False)
+    monkeypatch.delenv("ML_ARTIFACTS_RELEASE_TAG", raising=False)
+    monkeypatch.delenv("ML_MODEL_ASSET_NAME", raising=False)
+    monkeypatch.delenv("ML_MODEL_METADATA_ASSET_NAME", raising=False)
+    monkeypatch.delenv("ML_EVALUATION_REPORT_ASSET_NAME", raising=False)
+    monkeypatch.delenv("ML_MODEL_SHA256", raising=False)
+    monkeypatch.delenv("ML_MODEL_METADATA_SHA256", raising=False)
+    monkeypatch.delenv("ML_EVALUATION_REPORT_SHA256", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("OPENWEATHER_COLLECTION_CITIES", raising=False)
@@ -54,6 +62,17 @@ def test_load_settings_uses_defaults_without_dotenv(monkeypatch) -> None:
         settings.inmet_database_sha256
         == "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe"
     )
+    assert settings.ml_artifacts_release_repo == "HitokiriGD/sistema-alerta-climatico"
+    assert settings.ml_artifacts_release_tag == "ml-artifacts-v1"
+    assert settings.ml_model_asset_name == "risk_level_model.joblib"
+    assert settings.ml_model_metadata_asset_name == "risk_level_model_metadata.json"
+    assert (
+        settings.ml_evaluation_report_asset_name
+        == "risk_level_robust_evaluation_temporal_report.json"
+    )
+    assert settings.ml_model_sha256 == ""
+    assert settings.ml_model_metadata_sha256 == ""
+    assert settings.ml_evaluation_report_sha256 == ""
     assert settings.github_token == ""
     assert settings.database_url == ""
     assert settings.openweather_collection_cities == BRAZILIAN_CAPITALS
@@ -90,6 +109,14 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     monkeypatch.setenv("INMET_DATABASE_RELEASE_TAG", "db-v2")
     monkeypatch.setenv("INMET_DATABASE_ASSET_NAME", "test.duckdb")
     monkeypatch.setenv("INMET_DATABASE_SHA256", "abc123")
+    monkeypatch.setenv("ML_ARTIFACTS_RELEASE_REPO", "owner/ml-repo")
+    monkeypatch.setenv("ML_ARTIFACTS_RELEASE_TAG", "ml-v2")
+    monkeypatch.setenv("ML_MODEL_ASSET_NAME", "model.joblib")
+    monkeypatch.setenv("ML_MODEL_METADATA_ASSET_NAME", "metadata.json")
+    monkeypatch.setenv("ML_EVALUATION_REPORT_ASSET_NAME", "report.json")
+    monkeypatch.setenv("ML_MODEL_SHA256", "model-sha")
+    monkeypatch.setenv("ML_MODEL_METADATA_SHA256", "metadata-sha")
+    monkeypatch.setenv("ML_EVALUATION_REPORT_SHA256", "report-sha")
     monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
     monkeypatch.setenv("DATABASE_URL", "postgresql://user:secret@example/db")
     monkeypatch.setenv(
@@ -117,6 +144,14 @@ def test_load_settings_reads_environment_variables(monkeypatch) -> None:
     assert settings.inmet_database_release_tag == "db-v2"
     assert settings.inmet_database_asset_name == "test.duckdb"
     assert settings.inmet_database_sha256 == "abc123"
+    assert settings.ml_artifacts_release_repo == "owner/ml-repo"
+    assert settings.ml_artifacts_release_tag == "ml-v2"
+    assert settings.ml_model_asset_name == "model.joblib"
+    assert settings.ml_model_metadata_asset_name == "metadata.json"
+    assert settings.ml_evaluation_report_asset_name == "report.json"
+    assert settings.ml_model_sha256 == "model-sha"
+    assert settings.ml_model_metadata_sha256 == "metadata-sha"
+    assert settings.ml_evaluation_report_sha256 == "report-sha"
     assert settings.github_token == "secret-token"
     assert settings.database_url == "postgresql://user:secret@example/db"
     assert settings.openweather_collection_cities == (

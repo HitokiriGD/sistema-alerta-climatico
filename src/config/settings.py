@@ -64,6 +64,14 @@ class Settings:
     inmet_database_release_tag: str
     inmet_database_asset_name: str
     inmet_database_sha256: str
+    ml_artifacts_release_repo: str
+    ml_artifacts_release_tag: str
+    ml_model_asset_name: str
+    ml_model_metadata_asset_name: str
+    ml_evaluation_report_asset_name: str
+    ml_model_sha256: str
+    ml_model_metadata_sha256: str
+    ml_evaluation_report_sha256: str
     github_token: str
     database_url: str
     openweather_collection_cities: tuple[tuple[str, str], ...]
@@ -200,6 +208,32 @@ def load_settings(load_dotenv_file: bool = True) -> Settings:
         inmet_database_sha256=_get_config_value(
             "INMET_DATABASE_SHA256",
             "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe",
+        ),
+        ml_artifacts_release_repo=_get_config_value(
+            "ML_ARTIFACTS_RELEASE_REPO",
+            "HitokiriGD/sistema-alerta-climatico",
+        ),
+        ml_artifacts_release_tag=_get_config_value(
+            "ML_ARTIFACTS_RELEASE_TAG",
+            "ml-artifacts-v1",
+        ),
+        ml_model_asset_name=_get_config_value(
+            "ML_MODEL_ASSET_NAME",
+            "risk_level_model.joblib",
+        ),
+        ml_model_metadata_asset_name=_get_config_value(
+            "ML_MODEL_METADATA_ASSET_NAME",
+            "risk_level_model_metadata.json",
+        ),
+        ml_evaluation_report_asset_name=_get_config_value(
+            "ML_EVALUATION_REPORT_ASSET_NAME",
+            "risk_level_robust_evaluation_temporal_report.json",
+        ),
+        ml_model_sha256=_get_config_value("ML_MODEL_SHA256", ""),
+        ml_model_metadata_sha256=_get_config_value("ML_MODEL_METADATA_SHA256", ""),
+        ml_evaluation_report_sha256=_get_config_value(
+            "ML_EVALUATION_REPORT_SHA256",
+            "",
         ),
         github_token=_get_config_value("GITHUB_TOKEN", ""),
         database_url=_get_config_value("DATABASE_URL", ""),
