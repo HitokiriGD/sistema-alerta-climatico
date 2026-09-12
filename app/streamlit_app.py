@@ -152,6 +152,14 @@ RUNTIME_ARTIFACT_DIRS = (
     Path("data/models"),
     Path("data/reports"),
 )
+PAGE_TITLE = "Alerta Climático | TCC"
+PAGE_ICON = "🌦️"
+PAGE_LAYOUT = "wide"
+DASHBOARD_SUBTITLE = (
+    "Consulta dados meteorológicos atuais, compara com o histórico do INMET "
+    "e usa Machine Learning supervisionado para apoiar a análise de risco "
+    "climático."
+)
 METHODOLOGICAL_NOTE_SHORT = (
     "O modelo foi treinado com rotulos derivados de regras tecnicas. "
     "A previsao representa uma classificacao supervisionada aprendida, "
@@ -159,29 +167,29 @@ METHODOLOGICAL_NOTE_SHORT = (
 )
 RISK_BADGE_STYLES = {
     "baixo": {
-        "background": "rgba(20, 184, 166, 0.16)",
-        "border": "rgba(45, 212, 191, 0.54)",
-        "text": "#99f6e4",
+        "background": "#ecfdf5",
+        "border": "#5eead4",
+        "text": "#0f766e",
     },
     "moderado": {
-        "background": "rgba(245, 158, 11, 0.16)",
-        "border": "rgba(251, 191, 36, 0.58)",
-        "text": "#fde68a",
+        "background": "#fffbeb",
+        "border": "#fbbf24",
+        "text": "#92400e",
     },
     "alto": {
-        "background": "rgba(249, 115, 22, 0.17)",
-        "border": "rgba(251, 146, 60, 0.64)",
-        "text": "#fed7aa",
+        "background": "#fff7ed",
+        "border": "#fb923c",
+        "text": "#9a3412",
     },
     "critico": {
-        "background": "rgba(239, 68, 68, 0.18)",
-        "border": "rgba(248, 113, 113, 0.70)",
-        "text": "#fecaca",
+        "background": "#fef2f2",
+        "border": "#f87171",
+        "text": "#991b1b",
     },
     "indisponivel": {
-        "background": "rgba(148, 163, 184, 0.12)",
-        "border": "rgba(148, 163, 184, 0.36)",
-        "text": "#cbd5e1",
+        "background": "#f8fafc",
+        "border": "#cbd5e1",
+        "text": "#475569",
     },
 }
 RISK_RECOMMENDATIONS = {
@@ -913,6 +921,169 @@ def build_main_result_summary(
     }
 
 
+def build_model_rule_comparison_sentence(
+    ml_risk: object,
+    rule_risk: object,
+) -> str:
+    """Compara ML e regras apenas quando ha divergencia real."""
+    ml_text = str(ml_risk or "indisponivel").strip().lower()
+    rule_text = str(rule_risk or "indisponivel").strip().lower()
+    if (
+        ml_text == "indisponivel"
+        or rule_text == "indisponivel"
+        or ml_text == rule_text
+    ):
+        return ""
+    return (
+        f"O modelo indicou {ml_text}, enquanto as regras tecnicas indicaram "
+        f"{rule_text}."
+    )
+
+
+def build_short_result_explanation(summary: dict[str, object]) -> str:
+    """Monta a frase curta de evidencia principal do resultado."""
+    event_type = str(summary.get("event_type") or "sem_risco_relevante")
+    event_guidance = str(summary.get("event_guidance") or "").strip().rstrip(".")
+    main_anomaly = str(summary.get("main_anomaly") or "").strip().lower()
+    anomaly_count = int(summary.get("anomaly_count") or 0)
+
+    if event_type == "sem_risco_relevante" or not event_guidance:
+        evidence = "a classificacao tecnica calculada com os dados atuais"
+    else:
+        evidence = event_guidance[0].lower() + event_guidance[1:]
+
+    if anomaly_count and "sem anomalia" not in main_anomaly:
+        return f"A principal evidencia foi {evidence}, com anomalia historica relevante."
+    return f"A principal evidencia foi {evidence}."
+
+
+def build_main_diagnosis_text(summary: dict[str, object]) -> str:
+    """Cria resumo executivo curto para o bloco principal."""
+    final_risk = str(summary.get("final_risk") or "indisponivel").lower()
+    ml_risk = str(summary.get("ml_risk") or "indisponivel").lower()
+    rule_risk = str(summary.get("rule_risk") or "indisponivel").lower()
+
+    if ml_risk != "indisponivel":
+        sentences = [
+            f"O modelo supervisionado classificou a consulta como risco {final_risk}.",
+        ]
+    else:
+        sentences = [
+            "A consulta foi classificada pelas regras tecnicas como "
+            f"risco {final_risk}.",
+        ]
+
+    sentences.append(build_short_result_explanation(summary))
+    comparison = build_model_rule_comparison_sentence(ml_risk, rule_risk)
+    if comparison:
+        sentences.append(comparison)
+    elif ml_risk == "indisponivel":
+        sentences.append(
+            "A camada de Machine Learning nao esta disponivel nesta execucao."
+        )
+
+    sentences.append(
+        "Recomenda-se acompanhar atualizacoes meteorologicas e adotar medidas "
+        "preventivas proporcionais ao cenario."
+    )
+    return " ".join(sentences[:4])
+
+
+def build_methodological_detail_text(
+    summary: dict[str, object],
+    risk: WeatherRisk | None = None,
+    analysis_result: dict[str, object] | None = None,
+    weather_data: dict[str, object] | None = None,
+    selected_station: dict[str, object] | None = None,
+) -> str:
+    """Concentra detalhes metodologicos fora do resumo executivo."""
+    parts = [
+        METHODOLOGICAL_NOTE,
+        str(summary.get("methodological_caution") or ""),
+        (
+            "O resultado combina a predicao do modelo salvo localmente, quando "
+            "disponivel, com a classificacao por regras tecnicas exibida nos "
+            "cards e nas abas de explicabilidade."
+        ),
+        (
+            "O historico INMET e usado como referencia comparativa para "
+            "anomalias, percentis e contexto da estacao; ele nao gera sozinho "
+            "um aviso atual."
+        ),
+    ]
+
+    comparison = build_model_rule_comparison_sentence(
+        summary.get("ml_risk"),
+        summary.get("rule_risk"),
+    )
+    if comparison:
+        parts.append(comparison)
+    else:
+        parts.append(
+            "Quando ML e regras indicam o mesmo nivel, a comparacao e mantida "
+            "nos cards para evitar repeticao no texto principal."
+        )
+
+    variables_text = _methodological_variables_text(risk, weather_data)
+    if variables_text:
+        parts.append(f"Variaveis consideradas: {variables_text}.")
+
+    anomaly_text = _methodological_anomaly_text(analysis_result)
+    if anomaly_text:
+        parts.append(anomaly_text)
+
+    station_label = _selected_station_label(selected_station)
+    if station_label:
+        parts.append(f"Referencia historica INMET usada: {station_label}.")
+
+    parts.append(
+        "O painel e um instrumento academico de apoio a decisao e nao substitui "
+        "comunicados ou orientacoes de orgaos competentes."
+    )
+    return " ".join(part.strip() for part in parts if str(part).strip())
+
+
+def _methodological_variables_text(
+    risk: WeatherRisk | None,
+    weather_data: dict[str, object] | None,
+) -> str:
+    variable_keys = []
+    if risk is not None:
+        variable_keys.extend(risk.variables.keys())
+    if weather_data:
+        variable_keys.extend(key for key in STANDARD_WEATHER_FIELDS if key in weather_data)
+
+    labels = []
+    for key in variable_keys:
+        label = VARIABLE_DISPLAY.get(str(key), {}).get("label", str(key))
+        if label not in labels:
+            labels.append(label)
+    return ", ".join(labels)
+
+
+def _methodological_anomaly_text(
+    analysis_result: dict[str, object] | None,
+) -> str:
+    if not analysis_result or not analysis_result.get("has_historical_data"):
+        return "Comparacao historica indisponivel para esta consulta."
+
+    anomalies = analysis_result.get("anomalies", [])
+    if not isinstance(anomalies, list) or not anomalies:
+        return "Comparacao historica disponivel, sem anomalias destacadas."
+
+    labels = []
+    for anomaly in anomalies:
+        if not isinstance(anomaly, dict):
+            continue
+        anomaly_type = str(anomaly.get("anomaly_type") or "")
+        labels.append(ANOMALY_LABELS.get(anomaly_type, anomaly_type))
+    labels_text = ", ".join(label for label in labels if label)
+    return (
+        "Anomalias historicas destacadas nos detalhes tecnicos: "
+        f"{labels_text or 'nao identificadas'}."
+    )
+
+
 def build_result_explanation(
     ml_prediction: dict[str, object] | None,
     risk: WeatherRisk | None,
@@ -928,36 +1099,14 @@ def build_result_explanation(
         weather_data=weather_data,
         selected_station=selected_station,
     )
-    ml_risk = str(summary["ml_risk"])
-    rule_risk = str(summary["rule_risk"])
-    variable_text = _attention_variable_text(risk, analysis_result)
-    rule_text = (
-        f"As regras tecnicas indicaram risco {rule_risk}"
-        if rule_risk != "indisponivel"
-        else "As regras tecnicas nao foram calculadas"
-    )
-    history_text = _historical_explanation_text(analysis_result)
-    divergence_text = build_divergence_message(ml_risk, rule_risk)
+    return build_main_diagnosis_text(summary)
 
-    if ml_risk != "indisponivel":
-        ml_text = f"O modelo de Machine Learning supervisionado classificou a consulta como {ml_risk}."
-    else:
-        ml_text = (
-            "O modelo de Machine Learning supervisionado nao esta disponivel "
-            "localmente; a consulta permanece apoiada pelas regras tecnicas."
-        )
 
-    return " ".join(
-        [
-            ml_text,
-            str(summary["why_text"]),
-            variable_text,
-            rule_text + ".",
-            history_text,
-            divergence_text,
-            "Recomendacao pratica: " + str(summary["recommendation"]),
-        ]
-    )
+def _short_warning_text(summary: dict[str, object]) -> str:
+    event_guidance = str(summary.get("event_guidance") or "").strip()
+    if event_guidance:
+        return event_guidance
+    return str(summary.get("warning_text") or "")
 
 
 def build_evidence_summary(
@@ -1279,16 +1428,21 @@ def show_result_analysis_section(
             metric_col_c.metric("Risco por regras", str(summary["rule_risk"]).upper())
             metric_col_d.metric("Anomalias historicas", summary["anomaly_count"])
             st.metric("Nivel de atencao", str(summary["attention_level"]))
-            st.info(str(summary["warning_text"]))
-            st.write(str(summary["recommendation"]))
+            st.info(_short_warning_text(summary))
 
         with col_explanation:
             st.markdown(f"#### {summary['warning_title']}")
             st.write(explanation)
-            st.info(str(summary["event_guidance"]))
-            st.caption(METHODOLOGICAL_NOTE_SHORT)
             with st.expander("Detalhe metodologico"):
-                st.write(METHODOLOGICAL_NOTE)
+                st.write(
+                    build_methodological_detail_text(
+                        summary,
+                        risk=risk,
+                        analysis_result=analysis_result,
+                        weather_data=weather_data,
+                        selected_station=selected_station,
+                    )
+                )
 
 
 def show_evidence_section(
@@ -2939,35 +3093,35 @@ def apply_dashboard_style() -> None:
         """
         <style>
         .stApp {
-            background: linear-gradient(135deg, #111827 0%, #1f2937 54%, #0f172a 100%);
-            color: #e5edf6;
+            background: #ffffff;
+            color: #0f172a;
         }
         .block-container {
             padding-top: 2.8rem;
             padding-bottom: 3rem;
         }
         .sac-hero {
-            border: 1px solid rgba(125, 211, 252, 0.25);
+            border: 1px solid #bae6fd;
             border-radius: 14px;
-            padding: 1.4rem 1.6rem;
-            margin-top: 1.4rem;
+            padding: 1.35rem 1.55rem;
+            margin-top: 1.1rem;
             margin-bottom: 1.2rem;
             background:
-                linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.82)),
-                linear-gradient(90deg, rgba(14, 165, 233, 0.18), rgba(20, 184, 166, 0.10));
-            box-shadow: 0 18px 45px rgba(2, 6, 23, 0.26);
+                linear-gradient(135deg, #f0f9ff 0%, #ffffff 62%),
+                linear-gradient(90deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
+            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
         }
         .sac-hero h1 {
             margin: 0.2rem 0 0.45rem 0;
             font-size: clamp(2rem, 4vw, 3.4rem);
             line-height: 1.02;
             letter-spacing: 0;
-            color: #f8fafc;
+            color: #0f172a;
         }
         .sac-hero p {
             margin: 0;
             max-width: 920px;
-            color: #cbd5e1;
+            color: #334155;
             font-size: 1.02rem;
         }
         .sac-pill-row {
@@ -2977,16 +3131,16 @@ def apply_dashboard_style() -> None:
             margin-top: 1rem;
         }
         .sac-pill {
-            border: 1px solid rgba(125, 211, 252, 0.28);
-            background: rgba(8, 47, 73, 0.36);
-            color: #bae6fd;
+            border: 1px solid #bae6fd;
+            background: #f0f9ff;
+            color: #075985;
             border-radius: 999px;
             padding: 0.34rem 0.72rem;
             font-size: 0.82rem;
             font-weight: 700;
         }
         .sac-section-kicker {
-            color: #67e8f9;
+            color: #0284c7;
             font-size: 0.78rem;
             font-weight: 800;
             letter-spacing: 0.08em;
@@ -2995,35 +3149,35 @@ def apply_dashboard_style() -> None:
         }
         .sac-card {
             min-height: 118px;
-            border: 1px solid rgba(148, 163, 184, 0.22);
+            border: 1px solid #e2e8f0;
             border-radius: 12px;
             padding: 1rem;
-            background: rgba(30, 41, 59, 0.68);
-            box-shadow: 0 14px 30px rgba(2, 6, 23, 0.20);
+            background: #ffffff;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
         }
         .sac-card-ml {
-            border-color: rgba(34, 211, 238, 0.30);
-            background: linear-gradient(180deg, rgba(22, 78, 99, 0.48), rgba(30, 41, 59, 0.72));
+            border-color: #bae6fd;
+            background: linear-gradient(180deg, #ffffff, #f0f9ff);
         }
         .sac-card-muted {
-            background: rgba(30, 41, 59, 0.52);
+            background: #f8fafc;
             min-height: 92px;
         }
         .sac-card-label {
-            color: #94a3b8;
+            color: #64748b;
             font-size: 0.80rem;
             font-weight: 700;
             text-transform: uppercase;
         }
         .sac-card-value {
-            color: #f8fafc;
+            color: #0f172a;
             font-size: 1.45rem;
             line-height: 1.12;
             font-weight: 800;
             margin-top: 0.5rem;
         }
         .sac-card-caption {
-            color: #cbd5e1;
+            color: #475569;
             font-size: 0.86rem;
             margin-top: 0.55rem;
         }
@@ -3040,14 +3194,14 @@ def apply_dashboard_style() -> None:
             letter-spacing: 0;
         }
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background: rgba(15, 23, 42, 0.70);
-            border-color: rgba(148, 163, 184, 0.22);
+            background: #ffffff;
+            border-color: #e2e8f0;
             border-radius: 12px;
-            box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18);
+            box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
         }
         div[data-testid="stMetric"] {
-            background: rgba(30, 41, 59, 0.42);
-            border: 1px solid rgba(148, 163, 184, 0.18);
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             border-radius: 10px;
             padding: 0.55rem 0.65rem;
         }
@@ -3064,40 +3218,13 @@ def apply_dashboard_style() -> None:
 
 
 def show_dashboard_header() -> None:
-    """Exibe cabecalho visual para apresentacao do TCC."""
+    """Exibe cabecalho visual simples para apresentacao do TCC."""
     st.markdown(
-        """
+        f"""
         <section class="sac-hero">
             <div class="sac-section-kicker">TCC | Machine Learning supervisionado</div>
             <h1>Sistema Inteligente de Alerta Climático</h1>
-            <p>
-                Dados atuais da OpenWeather, histórico INMET e modelos supervisionados
-                para apoiar a leitura técnica de risco climático por cidade.
-            </p>
-            <div class="sac-pill-row">
-                <span class="sac-pill">OpenWeather atual</span>
-                <span class="sac-pill">INMET histórico</span>
-                <span class="sac-pill">RiskClassifier explicável</span>
-                <span class="sac-pill">Predição ML local</span>
-            </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def show_dashboard_header() -> None:
-    """Exibe cabecalho visual simples para apresentacao do TCC."""
-    st.markdown(
-        """
-        <section class="sac-hero">
-            <div class="sac-section-kicker">TCC | Machine Learning supervisionado</div>
-            <h1>Sistema Inteligente de Alerta Climatico</h1>
-            <p>
-                Sistema academico que consulta dados meteorologicos atuais,
-                compara com historico do INMET e aplica Machine Learning
-                supervisionado para apoiar a classificacao de risco climatico.
-            </p>
+            <p>{DASHBOARD_SUBTITLE}</p>
             <div class="sac-pill-row">
                 <span class="sac-pill">Consulta por cidade</span>
                 <span class="sac-pill">ML supervisionado local</span>
@@ -3121,10 +3248,14 @@ def show_initial_state_guidance() -> None:
 
 def main() -> None:
     """Executa o dashboard Streamlit do projeto."""
+    st.set_page_config(
+        page_title=PAGE_TITLE,
+        page_icon=PAGE_ICON,
+        layout=PAGE_LAYOUT,
+    )
     settings = load_settings()
     ensure_runtime_artifact_directories()
 
-    st.set_page_config(page_title="Sistema de Alerta Climatico", layout="wide")
     apply_dashboard_style()
     show_dashboard_header()
 

@@ -1,12 +1,16 @@
 import json
 
 from app.streamlit_app import build_intelligent_diagnosis_summary
+from app.streamlit_app import build_main_diagnosis_text
 from app.streamlit_app import build_divergence_message
 from app.streamlit_app import build_evidence_summary
 from app.streamlit_app import build_main_result_summary
+from app.streamlit_app import build_methodological_detail_text
 from app.streamlit_app import build_model_comparison_table
+from app.streamlit_app import build_model_rule_comparison_sentence
 from app.streamlit_app import build_result_explanation
 from app.streamlit_app import build_risk_recommendation
+from app.streamlit_app import build_short_result_explanation
 from app.streamlit_app import extract_best_model_summary
 from app.streamlit_app import format_probability_table
 from app.streamlit_app import get_ml_prediction_for_dashboard
@@ -78,6 +82,10 @@ def make_weather_data() -> dict[str, object]:
         "wind_speed": 18.0,
         "pressure_station_hpa": 1004.0,
     }
+
+
+def sentence_count(text: str) -> int:
+    return len([part for part in text.split(".") if part.strip()])
 
 
 def test_load_ml_evaluation_report_prefers_temporal(tmp_path) -> None:
@@ -253,9 +261,10 @@ def test_build_result_explanation_when_ml_and_rules_agree() -> None:
         make_analysis_result(),
     )
 
-    assert "classificou a consulta como alto" in explanation
-    assert "mesmo nivel de risco" in explanation
-    assert "Umidade" in explanation
+    assert "classificou a consulta como risco alto" in explanation
+    assert "principal evidencia" in explanation
+    assert "enquanto as regras tecnicas" not in explanation
+    assert sentence_count(explanation) <= 4
 
 
 def test_build_result_explanation_when_ml_and_rules_diverge() -> None:
@@ -266,8 +275,8 @@ def test_build_result_explanation_when_ml_and_rules_diverge() -> None:
     )
 
     assert "indicou moderado" in explanation
-    assert "indicaram alto" in explanation
-    assert "limites diretos" in explanation
+    assert "regras tecnicas indicaram alto" in explanation
+    assert sentence_count(explanation) <= 4
 
 
 def test_build_divergence_message_without_model() -> None:
@@ -293,10 +302,87 @@ def test_build_result_explanation_includes_warning_and_practical_guidance() -> N
         selected_station={"station_label": "MANAUS - AM | A101"},
     )
 
-    assert "Evidencias consideradas" in explanation
-    assert "Recomendacao pratica" in explanation
-    assert "MANAUS - AM | A101" in explanation
-    assert "hidratacao" in explanation
+    assert "principal evidencia" in explanation
+    assert "Recomenda-se acompanhar atualizacoes meteorologicas" in explanation
+    assert "MANAUS - AM | A101" not in explanation
+    assert "rotulos derivados" not in explanation
+    assert sentence_count(explanation) <= 4
+
+
+def test_build_main_diagnosis_text_stays_short_and_avoids_variable_list() -> None:
+    summary = build_main_result_summary(
+        {
+            "available": True,
+            "prediction": "moderado",
+            "model_name": "random_forest",
+            "selection_metric": "f1_macro",
+        },
+        make_risk(),
+        make_analysis_result(),
+        weather_data=make_weather_data(),
+        selected_station={"station_label": "MANAUS - AM | A101"},
+    )
+
+    text = build_main_diagnosis_text(summary)
+
+    assert sentence_count(text) <= 4
+    assert "temperature" not in text
+    assert "humidity" not in text
+    assert "precipitation" not in text
+    assert "wind_speed" not in text
+    assert "pressure" not in text
+    assert "MANAUS - AM | A101" not in text
+    assert "rotulos derivados" not in text
+    assert "percentil" not in text.lower()
+
+
+def test_build_short_result_explanation_mentions_main_evidence_only() -> None:
+    summary = build_main_result_summary(
+        {"available": True, "prediction": "alto"},
+        make_risk(),
+        make_analysis_result(),
+    )
+
+    text = build_short_result_explanation(summary)
+
+    assert text.startswith("A principal evidencia foi")
+    assert "anomalia historica relevante" in text
+    assert "temperature" not in text
+
+
+def test_model_rule_comparison_sentence_only_when_divergent() -> None:
+    divergent = build_model_rule_comparison_sentence("alto", "moderado")
+    same = build_model_rule_comparison_sentence("alto", "alto")
+
+    assert "modelo indicou alto" in divergent
+    assert "regras tecnicas indicaram moderado" in divergent
+    assert same == ""
+
+
+def test_methodological_detail_contains_caution_not_main_text() -> None:
+    summary = build_main_result_summary(
+        {"available": True, "prediction": "alto"},
+        make_risk(),
+        make_analysis_result(),
+        weather_data=make_weather_data(),
+        selected_station={"station_label": "MANAUS - AM | A101"},
+    )
+    main_text = build_main_diagnosis_text(summary)
+    detail_text = build_methodological_detail_text(
+        summary,
+        risk=make_risk(),
+        analysis_result=make_analysis_result(),
+        weather_data=make_weather_data(),
+        selected_station={"station_label": "MANAUS - AM | A101"},
+    )
+
+    assert "rotulos derivados" not in main_text
+    assert "nao substitui" not in main_text
+    assert "derivados do classificador por regras" in detail_text
+    assert "nao substitui" in detail_text
+    assert "INMET" in detail_text
+    assert "MANAUS - AM | A101" in detail_text
+    assert "Variaveis consideradas" in detail_text
 
 
 def test_build_evidence_summary_contains_compact_fields() -> None:
