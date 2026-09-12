@@ -557,15 +557,20 @@ Na tela, o fluxo foi simplificado para uma experiencia de consulta:
 - depois da busca, a primeira area exibida e `Resultado da analise`, com a
   predicao de Machine Learning supervisionado, o risco por regras, o modelo
   usado, a metrica de selecao e a quantidade de anomalias historicas;
-- ao lado do resultado, a area `Por que esse resultado?` explica de forma
-  curta se o modelo e as regras concordaram ou divergiram, quais variaveis
-  chamaram atencao e o que a comparacao historica encontrou;
+- ao lado do resultado, a area `Por que esse resultado?` apresenta um resumo
+  executivo com no maximo quatro frases: resultado, evidencia principal,
+  divergencia entre ML e regras quando existir, e recomendacao curta;
 - `Evidencias usadas` mostra cards compactos com temperatura, sensacao termica,
   umidade, chuva, vento, pressao, estacao INMET, periodo historico e principal
   anomalia;
 - `Detalhes tecnicos` concentra informacoes mais pesadas em abas: desempenho
   dos modelos treinados, probabilidades por classe, features usadas pelo
   modelo, regras acionadas, estatisticas historicas e variaveis brutas.
+
+O tema visual do dashboard e claro, com fundo branco e cards discretos, para
+facilitar a apresentacao do TCC. Detalhes metodologicos, variaveis completas,
+percentis, estacao INMET e cautelas ficam em abas ou expanders, evitando
+poluir o resultado principal.
 
 A comparacao dos demais modelos no dashboard e apenas de desempenho registrado
 nos relatorios locais. A predicao atual usa somente o modelo principal salvo em
