@@ -674,6 +674,39 @@ modelagem; ele nao gera alerta atual sozinho nesta etapa. No dashboard, as
 regras ficam nos detalhes tecnicos como explicabilidade da classificacao e
 ajudam a justificar os rotulos aprendidos pelos modelos.
 
+## Camada de Avisos e Recomendacoes
+
+A comunicacao de risco do dashboard foi separada em uma camada propria em
+`src/alerts/risk_messages.py`. Essa camada nao cria novas regras de
+classificacao e nao altera o `RiskClassifier`; ela transforma o resultado ja
+calculado em mensagens mais claras para apoio a decisao.
+
+Para cada nivel (`baixo`, `moderado`, `alto` e `critico`), o sistema gera:
+
+- titulo do aviso;
+- descricao curta do risco potencial;
+- nivel de atencao;
+- recomendacao para usuario ou populacao;
+- recomendacao para autoridades ou responsaveis;
+- cautela metodologica.
+
+As mensagens tambem consideram o tipo de evento principal, como
+`calor_extremo`, `baixa_umidade`, `chuva_intensa`, `vento_forte`,
+`frio_intenso`, `risco_incendio` e `sem_risco_relevante`. Assim, um caso de
+baixa umidade orienta hidratacao e atencao respiratoria, enquanto um caso de
+chuva intensa destaca acompanhamento de deslocamentos, alagamentos e areas
+sensiveis.
+
+No dashboard, o bloco `Resultado da analise` mostra o nivel de atencao, o aviso
+principal e uma recomendacao curta. A aba `Avisos e recomendacoes`, em
+`Detalhes tecnicos`, mostra as evidencias consideradas, recomendacao completa
+para a populacao, recomendacao para responsaveis e a cautela metodologica.
+
+Esses avisos sao preventivos e interpretativos. Eles usam dados atuais,
+resultado do modelo quando disponivel, classificacao por regras e comparacao
+historica como apoio a decisao, mas nao substituem alertas oficiais, protocolos
+institucionais ou avaliacao de orgaos competentes.
+
 ## Comparacao Historica no Dashboard
 
 O dashboard tambem exibe a secao `Comparacao com historico INMET`. Ela usa os
