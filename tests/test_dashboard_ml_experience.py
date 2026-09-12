@@ -228,6 +228,8 @@ def test_build_main_result_summary_prioritizes_ml_when_available() -> None:
     assert "autoridades" not in summary["warning_text"].lower()
     assert summary["anomaly_count"] == 1
     assert summary["model_name"] == "random_forest"
+    assert summary["result_label"] == "Risco previsto pela IA"
+    assert "Machine Learning supervisionado" in summary["result_caption"]
 
 
 def test_build_main_result_summary_falls_back_to_rules_without_model() -> None:
@@ -240,6 +242,8 @@ def test_build_main_result_summary_falls_back_to_rules_without_model() -> None:
     assert summary["final_risk"] == "alto"
     assert summary["ml_risk"] == "indisponivel"
     assert summary["model_name"] == "Nao disponivel"
+    assert summary["result_label"] == "Classificacao tecnica por regras"
+    assert "regras tecnicas" in summary["result_caption"]
 
 
 def test_build_result_explanation_when_ml_and_rules_agree() -> None:

@@ -33,6 +33,8 @@ from src.data.inmet_database import get_database_metadata
 from src.data.inmet_database import load_station_history_from_database
 from src.data.openweather_client import OpenWeatherClient
 from src.data.weather_client import normalize_weather_payload
+from src.ml.artifacts import DEFAULT_EVALUATION_REPORT_PATH
+from src.ml.artifacts import ensure_ml_artifacts_available
 from src.ml.predict import METHODOLOGICAL_NOTE
 from src.ml.predict import DEFAULT_METADATA_PATH
 from src.ml.predict import DEFAULT_MODEL_PATH
@@ -242,16 +244,18 @@ def build_deploy_artifact_guidance(
 
     if not model_files_available(model_path, metadata_path):
         guidance.append(
-            "Modelo ML local nao encontrado. Gere o dataset, treine o modelo "
-            f"com {ML_DATASET_COMMAND} e {ML_TRAINING_COMMAND}, ou publique os "
-            "artefatos em uma release futuramente."
+            "Modelo ML local nao encontrado. O dashboard tentara baixar os "
+            "artefatos da GitHub Release configurada no primeiro uso. Como "
+            "alternativa local reprodutivel, gere o dataset e treine o modelo "
+            f"com {ML_DATASET_COMMAND} e {ML_TRAINING_COMMAND}."
         )
 
     report_status = load_ml_evaluation_report(report_dir)
     if not report_status["available"]:
         guidance.append(
-            "Relatorio de avaliacao ML nao encontrado. Depois de gerar dataset "
-            f"e treinar o modelo, execute {ML_EVALUATION_COMMAND}."
+            "Relatorio de avaliacao ML nao encontrado. O dashboard tentara "
+            "baixar o relatorio da mesma release dos artefatos ML. Para gerar "
+            f"localmente, execute {ML_EVALUATION_COMMAND}."
         )
 
     return [safe_dashboard_message(message, settings) for message in guidance]
@@ -261,6 +265,39 @@ def build_deploy_artifact_guidance(
 def ensure_inmet_database_available_for_app(settings: Settings) -> dict[str, object]:
     """Garante a base DuckDB uma vez por sessao do Streamlit."""
     return ensure_inmet_database_available(settings)
+
+
+@st.cache_resource(show_spinner=False)
+def ensure_ml_artifacts_available_for_app(settings: Settings) -> dict[str, object]:
+    """Garante artefatos ML uma vez por sessao do Streamlit."""
+    return ensure_ml_artifacts_available(settings)
+
+
+def prepare_ml_artifacts_for_dashboard(settings: Settings) -> dict[str, object]:
+    """Prepara modelo, metadados e relatorio antes da predicao ML."""
+    artifacts_already_available = (
+        model_files_available(DEFAULT_MODEL_PATH, DEFAULT_METADATA_PATH)
+        and DEFAULT_EVALUATION_REPORT_PATH.exists()
+    )
+    if artifacts_already_available:
+        return ensure_ml_artifacts_available_for_app(settings)
+
+    st.info("Preparando artefatos de Machine Learning...")
+    with st.spinner("Preparando artefatos de Machine Learning..."):
+        status = ensure_ml_artifacts_available_for_app(settings)
+
+    if status.get("available"):
+        st.success("Artefatos de Machine Learning carregados com sucesso.")
+        return status
+
+    st.warning(
+        "Nao foi possivel baixar os artefatos de Machine Learning. A consulta "
+        "continuara com dados atuais, analise historica e regras tecnicas."
+    )
+    error_message = str(status.get("error_message") or "").strip()
+    if error_message:
+        st.info(safe_dashboard_message(error_message, settings))
+    return status
 
 
 def prepare_inmet_database_for_historical_flow(settings: Settings) -> dict[str, object]:
@@ -824,6 +861,16 @@ def build_main_result_summary(
     ml_risk = str(prediction.get("prediction")) if ml_available else "indisponivel"
     rule_risk = risk.risk_level if risk is not None else "indisponivel"
     final_risk = ml_risk if ml_available else rule_risk
+    result_label = (
+        "Risco previsto pela IA"
+        if ml_available
+        else "Classificacao tecnica por regras"
+    )
+    result_caption = (
+        "Machine Learning supervisionado com modelo salvo localmente"
+        if ml_available
+        else "Resultado baseado em regras tecnicas e historico quando disponivel"
+    )
     event_type = risk.event_type if risk is not None else "sem_risco_relevante"
     anomaly_count = _historical_anomaly_count(analysis_result)
     main_anomaly = (
@@ -842,6 +889,8 @@ def build_main_result_summary(
 
     return {
         "final_risk": final_risk or "indisponivel",
+        "result_label": result_label,
+        "result_caption": result_caption,
         "ml_risk": ml_risk,
         "model_name": str(prediction.get("model_name") or "Nao disponivel"),
         "selection_metric": str(
@@ -1219,9 +1268,9 @@ def show_result_analysis_section(
         with col_summary:
             _render_risk_card(
                 st,
-                "Risco previsto pela IA",
+                str(summary["result_label"]),
                 str(summary["final_risk"]),
-                "Machine Learning supervisionado quando disponivel",
+                str(summary["result_caption"]),
             )
             metric_col_a, metric_col_b = st.columns(2)
             metric_col_a.metric("Modelo usado", str(summary["model_name"]))
@@ -2104,6 +2153,7 @@ def show_simplified_analysis_section(
         )
         return
 
+    prepare_ml_artifacts_for_dashboard(settings)
     prediction_result = get_ml_prediction_for_dashboard(weather_data)
     requested_period = format_requested_period(start_year, end_year)
     client = InmetClient(settings)
@@ -2258,6 +2308,7 @@ def show_inmet_historical_section(
         )
         return
 
+    prepare_ml_artifacts_for_dashboard(settings)
     prediction_result = get_ml_prediction_for_dashboard(weather_data)
     client = InmetClient(settings)
     database_status = prepare_inmet_database_for_historical_flow(settings)
