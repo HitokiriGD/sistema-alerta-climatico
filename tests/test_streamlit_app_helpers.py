@@ -1,10 +1,12 @@
 import pandas as pd
 
 from app.streamlit_app import build_current_pressure_text
+from app.streamlit_app import build_deploy_artifact_guidance
 from app.streamlit_app import build_historical_source_status
 from app.streamlit_app import build_interpretive_summary
 from app.streamlit_app import build_historical_statistics_rows
 from app.streamlit_app import build_pressure_reference_details
+from app.streamlit_app import ensure_runtime_artifact_directories
 from app.streamlit_app import find_nearest_station_by_coordinates
 from app.streamlit_app import find_station_by_city_name
 from app.streamlit_app import format_historical_anomalies
@@ -18,6 +20,14 @@ from app.streamlit_app import resolve_station_for_weather_data
 from app.streamlit_app import format_requested_period
 from app.streamlit_app import validate_historical_period
 from src.alerts.risk_classifier import WeatherRisk
+
+
+class FakeDeploySettings:
+    openweather_api_key = "openweather-secret"
+    github_token = "github-secret"
+    database_url = "postgresql://user:secret@example/db"
+    inmet_database_url = "https://example.test/download?token=secret"
+    inmet_database_path = "missing.duckdb"
 
 
 def make_station_catalog() -> pd.DataFrame:
@@ -67,6 +77,43 @@ def make_risk() -> WeatherRisk:
         },
         recommendations=["Acompanhar atualizacoes meteorologicas locais."],
     )
+
+
+def test_ensure_runtime_artifact_directories_creates_expected_dirs(tmp_path) -> None:
+    created_dirs = ensure_runtime_artifact_directories(tmp_path)
+
+    assert {path.relative_to(tmp_path).as_posix() for path in created_dirs} == {
+        "data/processed",
+        "data/models",
+        "data/reports",
+    }
+    assert (tmp_path / "data/processed").is_dir()
+    assert (tmp_path / "data/models").is_dir()
+    assert (tmp_path / "data/reports").is_dir()
+
+
+def test_build_deploy_artifact_guidance_handles_missing_artifacts(tmp_path) -> None:
+    settings = FakeDeploySettings()
+    settings.inmet_database_path = str(tmp_path / "missing.duckdb")
+
+    guidance = build_deploy_artifact_guidance(
+        settings,
+        report_dir=tmp_path / "reports",
+        model_path=tmp_path / "models" / "risk_level_model.joblib",
+        metadata_path=tmp_path / "models" / "risk_level_model_metadata.json",
+    )
+
+    combined_message = " ".join(guidance)
+    assert "DuckDB" in combined_message
+    assert "Modelo ML" in combined_message
+    assert "Relatorio de avaliacao ML" in combined_message
+    assert "download_inmet_database.py" in combined_message
+    assert "build_ml_dataset.py" in combined_message
+    assert "train_ml_models.py" in combined_message
+    assert "evaluate_ml_models.py" in combined_message
+    assert "openweather-secret" not in combined_message
+    assert "github-secret" not in combined_message
+    assert "postgresql://user:secret@example/db" not in combined_message
 
 
 def test_find_nearest_station_by_coordinates_returns_manaus() -> None:

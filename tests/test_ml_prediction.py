@@ -74,6 +74,17 @@ def test_model_files_available_identifies_missing_model(tmp_path) -> None:
     ) is False
 
 
+def test_load_model_bundle_returns_guidance_when_model_missing(tmp_path) -> None:
+    bundle = load_model_bundle(
+        tmp_path / "missing.joblib",
+        tmp_path / "missing_metadata.json",
+    )
+
+    assert bundle["available"] is False
+    assert "build_ml_dataset.py" in bundle["error_message"]
+    assert "train_ml_models.py" in bundle["error_message"]
+
+
 def test_load_model_bundle_loads_fake_model(tmp_path) -> None:
     model_path = tmp_path / "risk_level_model.joblib"
     metadata_path = tmp_path / "risk_level_model_metadata.json"

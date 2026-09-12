@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+from typing import Iterable
 
 from dotenv import load_dotenv
 
@@ -35,6 +36,12 @@ BRAZILIAN_CAPITALS: tuple[tuple[str, str], ...] = (
 )
 DEFAULT_OPENWEATHER_COLLECTION_CITIES = ",".join(
     f"{city}:{country}" for city, country in BRAZILIAN_CAPITALS
+)
+SENSITIVE_SETTING_NAMES = (
+    "OPENWEATHER_API_KEY",
+    "GITHUB_TOKEN",
+    "DATABASE_URL",
+    "INMET_DATABASE_URL",
 )
 
 
@@ -94,71 +101,119 @@ def _parse_bool(value: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "sim", "on"}
 
 
+def _read_streamlit_secret(key: str) -> str:
+    """Le uma chave do st.secrets quando o app estiver no Streamlit Cloud."""
+    try:
+        import streamlit as st
+
+        value = st.secrets.get(key, "")
+    except Exception:
+        return ""
+
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _get_config_value(key: str, default: str = "") -> str:
+    """Busca configuracao em variavel de ambiente ou secrets do Streamlit."""
+    env_value = os.getenv(key)
+    if env_value is not None:
+        return env_value
+
+    secret_value = _read_streamlit_secret(key)
+    if secret_value:
+        return secret_value
+
+    return default
+
+
+def sanitize_sensitive_text(
+    text: object,
+    sensitive_values: Iterable[object] = (),
+) -> str:
+    """Oculta valores sensiveis antes de exibir mensagens ao usuario."""
+    sanitized_text = str(text)
+    values_to_hide = [
+        os.getenv(name, "")
+        for name in SENSITIVE_SETTING_NAMES
+        if os.getenv(name, "")
+    ]
+    values_to_hide.extend(str(value) for value in sensitive_values if value)
+
+    for value in values_to_hide:
+        if len(value) < 4:
+            continue
+        sanitized_text = sanitized_text.replace(value, "[valor sensivel oculto]")
+
+    return sanitized_text
+
+
 def load_settings(load_dotenv_file: bool = True) -> Settings:
     """Carrega variaveis de ambiente usadas pelo projeto."""
     if load_dotenv_file:
         load_dotenv()
 
     return Settings(
-        openweather_api_key=os.getenv("OPENWEATHER_API_KEY", ""),
-        default_city=os.getenv("DEFAULT_CITY", "Brasilia"),
-        default_country=os.getenv("DEFAULT_COUNTRY", "BR"),
-        openweather_base_url=os.getenv(
+        openweather_api_key=_get_config_value("OPENWEATHER_API_KEY", ""),
+        default_city=_get_config_value("DEFAULT_CITY", "Brasilia"),
+        default_country=_get_config_value("DEFAULT_COUNTRY", "BR"),
+        openweather_base_url=_get_config_value(
             "OPENWEATHER_BASE_URL",
             "https://api.openweathermap.org/data/2.5",
         ),
-        inmet_historical_zip_dir=os.getenv(
+        inmet_historical_zip_dir=_get_config_value(
             "INMET_HISTORICAL_ZIP_DIR",
             "data/raw/inmet/zips",
         ),
         inmet_historical_start_year=int(
-            os.getenv("INMET_HISTORICAL_START_YEAR", "2020")
+            _get_config_value("INMET_HISTORICAL_START_YEAR", "2020")
         ),
         inmet_historical_end_year=int(
-            os.getenv("INMET_HISTORICAL_END_YEAR", "2026")
+            _get_config_value("INMET_HISTORICAL_END_YEAR", "2026")
         ),
-        inmet_processed_data_path=os.getenv(
+        inmet_processed_data_path=_get_config_value(
             "INMET_PROCESSED_DATA_PATH",
             "data/processed/inmet_hourly.parquet",
         ),
-        inmet_station_catalog_path=os.getenv(
+        inmet_station_catalog_path=_get_config_value(
             "INMET_STATION_CATALOG_PATH",
             "data/processed/inmet_station_catalog.csv",
         ),
-        inmet_database_path=os.getenv(
+        inmet_database_path=_get_config_value(
             "INMET_DATABASE_PATH",
             "data/processed/inmet_historical.duckdb",
         ),
-        inmet_database_url=os.getenv("INMET_DATABASE_URL", ""),
-        inmet_database_release_repo=os.getenv(
+        inmet_database_url=_get_config_value("INMET_DATABASE_URL", ""),
+        inmet_database_release_repo=_get_config_value(
             "INMET_DATABASE_RELEASE_REPO",
             "HitokiriGD/sistema-alerta-climatico",
         ),
-        inmet_database_release_tag=os.getenv(
+        inmet_database_release_tag=_get_config_value(
             "INMET_DATABASE_RELEASE_TAG",
             "inmet-db-v1",
         ),
-        inmet_database_asset_name=os.getenv(
+        inmet_database_asset_name=_get_config_value(
             "INMET_DATABASE_ASSET_NAME",
             "inmet_historical.duckdb",
         ),
-        inmet_database_sha256=os.getenv(
+        inmet_database_sha256=_get_config_value(
             "INMET_DATABASE_SHA256",
             "2621a5ada2f5b1d2f598690a3868639a406c4efe13fd36dd076f0a08eaa6edbe",
         ),
-        github_token=os.getenv("GITHUB_TOKEN", ""),
-        database_url=os.getenv("DATABASE_URL", ""),
+        github_token=_get_config_value("GITHUB_TOKEN", ""),
+        database_url=_get_config_value("DATABASE_URL", ""),
         openweather_collection_cities=parse_openweather_collection_cities(
-            os.getenv(
+            _get_config_value(
                 "OPENWEATHER_COLLECTION_CITIES",
                 DEFAULT_OPENWEATHER_COLLECTION_CITIES,
             )
         ),
         openweather_retention_days=int(
-            os.getenv("OPENWEATHER_RETENTION_DAYS", "180")
+            _get_config_value("OPENWEATHER_RETENTION_DAYS", "180")
         ),
-        openweather_max_rows=int(os.getenv("OPENWEATHER_MAX_ROWS", "100000")),
+        openweather_max_rows=int(_get_config_value("OPENWEATHER_MAX_ROWS", "100000")),
         openweather_store_raw_payload=_parse_bool(
-            os.getenv("OPENWEATHER_STORE_RAW_PAYLOAD", "false")
+            _get_config_value("OPENWEATHER_STORE_RAW_PAYLOAD", "false")
         ),
     )
