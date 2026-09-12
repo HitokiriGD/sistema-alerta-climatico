@@ -15,6 +15,9 @@ import requests
 import streamlit as st
 
 from src.alerts.historical_analyzer import HistoricalAnalyzer
+from src.alerts.risk_messages import build_authority_recommendation
+from src.alerts.risk_messages import build_public_recommendation
+from src.alerts.risk_messages import build_warning_summary
 from src.alerts.risk_classifier import WeatherRisk
 from src.alerts.risk_classifier import classify_weather_risk
 from src.config.settings import Settings
@@ -122,6 +125,18 @@ ML_REPORT_FILENAMES = [
 ML_EVALUATION_COMMAND = (
     "python scripts/evaluate_ml_models.py --split temporal "
     "--train-end-year 2024 --test-start-year 2025"
+)
+MODEL_SELECTION_TAB_LABEL = "Como o modelo principal foi escolhido"
+MODEL_SELECTION_EXPLANATION = (
+    "Esta tabela nao muda a cada consulta. Ela mostra o desempenho dos "
+    "algoritmos no conjunto de avaliacao usado no treinamento. O dashboard "
+    "utiliza o melhor modelo salvo localmente para classificar a cidade "
+    "consultada."
+)
+MODEL_SELECTION_METRIC_NOTE = (
+    "A metrica principal de selecao e f1_macro, nao accuracy, porque o "
+    "problema possui classes desbalanceadas e accuracy pode favorecer modelos "
+    "que acertam apenas a classe majoritaria."
 )
 ML_DATASET_COMMAND = (
     "python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 "
@@ -487,6 +502,20 @@ def show_weather_risk(risk: WeatherRisk) -> None:
     for recommendation in risk.recommendations:
         st.write(f"- {recommendation}")
 
+    st.write("Recomendacoes preventivas aprimoradas")
+    st.write("- Usuario/populacao: " + build_public_recommendation(
+        risk.risk_level,
+        risk.event_type,
+    ))
+    st.write("- Autoridades/responsaveis: " + build_authority_recommendation(
+        risk.risk_level,
+        risk.event_type,
+    ))
+    st.caption(
+        "Texto preventivo de apoio a decisao, baseado em dados disponiveis e "
+        "sem substituir comunicados de orgaos competentes."
+    )
+
     with st.expander("Regras acionadas"):
         if risk.triggered_rules:
             for rule in risk.triggered_rules:
@@ -703,13 +732,12 @@ def build_intelligent_diagnosis_summary(
     }
 
 
-def build_risk_recommendation(risk_level: object) -> str:
+def build_risk_recommendation(
+    risk_level: object,
+    event_type: object | None = None,
+) -> str:
     """Retorna recomendacao pratica para apoio a decisao."""
-    normalized = str(risk_level or "").strip().lower()
-    return RISK_RECOMMENDATIONS.get(
-        normalized,
-        "Consultar as evidencias tecnicas e manter monitoramento da condicao atual.",
-    )
+    return build_public_recommendation(risk_level, event_type)
 
 
 def build_divergence_message(
@@ -742,10 +770,22 @@ def build_divergence_message(
     )
 
 
+def _selected_station_label(selected_station: dict[str, object] | None) -> str:
+    if not selected_station:
+        return ""
+    return str(
+        selected_station.get("station_label")
+        or selected_station.get("station_code")
+        or ""
+    )
+
+
 def build_main_result_summary(
     ml_prediction: dict[str, object] | None,
     risk: WeatherRisk | None,
     analysis_result: dict[str, object] | None,
+    weather_data: dict[str, object] | None = None,
+    selected_station: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Consolida os campos principais exibidos no resultado da analise."""
     prediction = ml_prediction or {}
@@ -753,7 +793,21 @@ def build_main_result_summary(
     ml_risk = str(prediction.get("prediction")) if ml_available else "indisponivel"
     rule_risk = risk.risk_level if risk is not None else "indisponivel"
     final_risk = ml_risk if ml_available else rule_risk
+    event_type = risk.event_type if risk is not None else "sem_risco_relevante"
     anomaly_count = _historical_anomaly_count(analysis_result)
+    main_anomaly = (
+        _main_historical_anomaly_text(analysis_result) or "sem anomalia destacada"
+    )
+    warning = build_warning_summary(
+        final_risk,
+        event_type,
+        ml_risk=ml_risk,
+        rule_risk=rule_risk,
+        weather_data=weather_data,
+        anomaly_count=anomaly_count,
+        main_anomaly=main_anomaly,
+        station_label=_selected_station_label(selected_station),
+    )
 
     return {
         "final_risk": final_risk or "indisponivel",
@@ -763,10 +817,19 @@ def build_main_result_summary(
             prediction.get("selection_metric") or "Nao informada"
         ),
         "rule_risk": rule_risk or "indisponivel",
+        "event_type": event_type,
         "anomaly_count": anomaly_count,
-        "main_anomaly": _main_historical_anomaly_text(analysis_result)
-        or "sem anomalia destacada",
-        "recommendation": build_risk_recommendation(final_risk),
+        "main_anomaly": main_anomaly,
+        "attention_level": warning["action_level"],
+        "warning_title": warning["title"],
+        "warning_text": warning["warning_text"],
+        "recommendation": warning["practical_recommendation"],
+        "public_recommendation": warning["public_recommendation"],
+        "authority_recommendation": warning["authority_recommendation"],
+        "methodological_caution": warning["caution"],
+        "event_guidance": warning["event_guidance"],
+        "evidence_text": warning["evidence_text"],
+        "why_text": warning["why_text"],
     }
 
 
@@ -774,9 +837,17 @@ def build_result_explanation(
     ml_prediction: dict[str, object] | None,
     risk: WeatherRisk | None,
     analysis_result: dict[str, object] | None,
+    weather_data: dict[str, object] | None = None,
+    selected_station: dict[str, object] | None = None,
 ) -> str:
     """Monta explicacao curta sobre a classificacao final."""
-    summary = build_main_result_summary(ml_prediction, risk, analysis_result)
+    summary = build_main_result_summary(
+        ml_prediction,
+        risk,
+        analysis_result,
+        weather_data=weather_data,
+        selected_station=selected_station,
+    )
     ml_risk = str(summary["ml_risk"])
     rule_risk = str(summary["rule_risk"])
     variable_text = _attention_variable_text(risk, analysis_result)
@@ -799,10 +870,12 @@ def build_result_explanation(
     return " ".join(
         [
             ml_text,
+            str(summary["why_text"]),
             variable_text,
             rule_text + ".",
             history_text,
             divergence_text,
+            "Recomendacao pratica: " + str(summary["recommendation"]),
         ]
     )
 
@@ -1010,6 +1083,8 @@ def show_model_comparison_section(report_dir: str | Path = "data/reports") -> No
     report_result = load_ml_evaluation_report_for_app(str(report_dir))
 
     with st.container(border=True):
+        st.write(MODEL_SELECTION_EXPLANATION)
+        st.info(MODEL_SELECTION_METRIC_NOTE)
         if not report_result["available"]:
             st.info(str(report_result["error_message"]))
             st.code(ML_EVALUATION_COMMAND)
@@ -1057,7 +1132,13 @@ def show_analysis_result_flow(
     station_message: str = "",
 ) -> None:
     """Exibe o fluxo simplificado: resultado, evidencias e detalhes."""
-    show_result_analysis_section(prediction_result, risk, analysis_result)
+    show_result_analysis_section(
+        prediction_result,
+        risk,
+        analysis_result,
+        weather_data=weather_data,
+        selected_station=selected_station,
+    )
     show_evidence_section(
         weather_data,
         selected_station=selected_station,
@@ -1082,10 +1163,24 @@ def show_result_analysis_section(
     ml_prediction: dict[str, object] | None,
     risk: WeatherRisk | None,
     analysis_result: dict[str, object] | None,
+    weather_data: dict[str, object] | None = None,
+    selected_station: dict[str, object] | None = None,
 ) -> None:
     """Mostra a conclusao principal da consulta."""
-    summary = build_main_result_summary(ml_prediction, risk, analysis_result)
-    explanation = build_result_explanation(ml_prediction, risk, analysis_result)
+    summary = build_main_result_summary(
+        ml_prediction,
+        risk,
+        analysis_result,
+        weather_data=weather_data,
+        selected_station=selected_station,
+    )
+    explanation = build_result_explanation(
+        ml_prediction,
+        risk,
+        analysis_result,
+        weather_data=weather_data,
+        selected_station=selected_station,
+    )
 
     st.subheader("Resultado da analise")
     with st.container(border=True):
@@ -1103,11 +1198,14 @@ def show_result_analysis_section(
             metric_col_c, metric_col_d = st.columns(2)
             metric_col_c.metric("Risco por regras", str(summary["rule_risk"]).upper())
             metric_col_d.metric("Anomalias historicas", summary["anomaly_count"])
+            st.metric("Nivel de atencao", str(summary["attention_level"]))
+            st.info(str(summary["warning_text"]))
+            st.write(str(summary["recommendation"]))
 
         with col_explanation:
-            st.markdown("#### Por que esse resultado?")
+            st.markdown(f"#### {summary['warning_title']}")
             st.write(explanation)
-            st.info(str(summary["recommendation"]))
+            st.info(str(summary["event_guidance"]))
             st.caption(METHODOLOGICAL_NOTE_SHORT)
             with st.expander("Detalhe metodologico"):
                 st.write(METHODOLOGICAL_NOTE)
@@ -1135,6 +1233,42 @@ def show_evidence_section(
         )
 
 
+def show_warning_recommendations_section(
+    weather_data: dict[str, object],
+    risk: WeatherRisk | None,
+    prediction_result: dict[str, object] | None,
+    analysis_result: dict[str, object] | None,
+    selected_station: dict[str, object] | None = None,
+) -> None:
+    """Mostra recomendacoes preventivas completas do aviso."""
+    summary = build_main_result_summary(
+        prediction_result,
+        risk,
+        analysis_result,
+        weather_data=weather_data,
+        selected_station=selected_station,
+    )
+
+    st.markdown(f"#### {summary['warning_title']}")
+    col_attention, col_event = st.columns(2)
+    col_attention.metric("Nivel de atencao", str(summary["attention_level"]))
+    col_event.metric("Evento principal", format_event_type(summary["event_type"]))
+    st.write(str(summary["warning_text"]))
+
+    with st.expander("Evidencias consideradas", expanded=True):
+        st.write(str(summary["evidence_text"]))
+
+    with st.expander("Recomendacao para usuario/populacao", expanded=True):
+        st.write(str(summary["public_recommendation"]))
+
+    with st.expander("Recomendacao para autoridades/responsaveis", expanded=True):
+        st.write(str(summary["authority_recommendation"]))
+
+    with st.expander("Cautela metodologica"):
+        st.write(str(summary["methodological_caution"]))
+        st.write(METHODOLOGICAL_NOTE_SHORT)
+
+
 def show_technical_details_section(
     weather_data: dict[str, object],
     risk: WeatherRisk | None,
@@ -1151,7 +1285,8 @@ def show_technical_details_section(
     st.subheader("Detalhes tecnicos")
     tabs = st.tabs(
         [
-            "Desempenho dos modelos treinados",
+            "Avisos e recomendacoes",
+            MODEL_SELECTION_TAB_LABEL,
             "Probabilidades por classe",
             "Features usadas pelo modelo",
             "Regras acionadas",
@@ -1161,9 +1296,18 @@ def show_technical_details_section(
     )
 
     with tabs[0]:
-        show_model_comparison_section()
+        show_warning_recommendations_section(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            analysis_result=analysis_result,
+            selected_station=selected_station,
+        )
 
     with tabs[1]:
+        show_model_comparison_section()
+
+    with tabs[2]:
         probability_rows = format_probability_table(
             (prediction_result or {}).get("probabilities", {})
         )
@@ -1172,7 +1316,7 @@ def show_technical_details_section(
         else:
             st.caption("Este modelo nao disponibiliza probabilidades de classe.")
 
-    with tabs[2]:
+    with tabs[3]:
         if not (prediction_result or {}).get("available"):
             st.info(str((prediction_result or {}).get("error_message", "")))
         features = [
@@ -1188,13 +1332,13 @@ def show_technical_details_section(
         for observation in observations:
             st.caption(str(observation))
 
-    with tabs[3]:
+    with tabs[4]:
         if risk is None:
             st.info("Classificacao por regras nao calculada para esta consulta.")
         else:
             show_weather_risk(risk)
 
-    with tabs[4]:
+    with tabs[5]:
         _show_historical_details(
             weather_data=weather_data,
             analysis_result=analysis_result,
@@ -1206,7 +1350,7 @@ def show_technical_details_section(
             station_message=station_message,
         )
 
-    with tabs[5]:
+    with tabs[6]:
         st.write("Dados atuais padronizados")
         st.dataframe(
             pd.DataFrame(build_current_weather_rows(weather_data)),
@@ -2087,7 +2231,7 @@ def show_inmet_historical_section(
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
             show_ml_prediction_section(weather_data, prediction_result)
-            st.subheader("4. Comparação dos Modelos Treinados")
+            st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
             show_model_comparison_section()
             st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
@@ -2118,7 +2262,7 @@ def show_inmet_historical_section(
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
             show_ml_prediction_section(weather_data, prediction_result)
-            st.subheader("4. Comparação dos Modelos Treinados")
+            st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
             show_model_comparison_section()
             st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
@@ -2144,7 +2288,7 @@ def show_inmet_historical_section(
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
             show_ml_prediction_section(weather_data, prediction_result)
-            st.subheader("4. Comparação dos Modelos Treinados")
+            st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
             show_model_comparison_section()
             st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
@@ -2160,7 +2304,7 @@ def show_inmet_historical_section(
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
             show_ml_prediction_section(weather_data, prediction_result)
-            st.subheader("4. Comparação dos Modelos Treinados")
+            st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
             show_model_comparison_section()
             st.subheader("5. Explicabilidade Técnica por Regras")
             show_weather_risk(risk)
@@ -2191,7 +2335,7 @@ def show_inmet_historical_section(
     st.subheader("3. Predição por Machine Learning")
     show_ml_prediction_section(weather_data, prediction_result)
 
-    st.subheader("4. Comparação dos Modelos Treinados")
+    st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
     show_model_comparison_section()
 
     st.subheader("5. Base historica associada")

@@ -12,6 +12,9 @@ from app.streamlit_app import format_probability_table
 from app.streamlit_app import get_ml_prediction_for_dashboard
 from app.streamlit_app import get_risk_badge_style
 from app.streamlit_app import load_ml_evaluation_report
+from app.streamlit_app import MODEL_SELECTION_EXPLANATION
+from app.streamlit_app import MODEL_SELECTION_METRIC_NOTE
+from app.streamlit_app import MODEL_SELECTION_TAB_LABEL
 from src.alerts.risk_classifier import WeatherRisk
 
 
@@ -140,6 +143,16 @@ def test_build_model_comparison_table_from_report() -> None:
     ]
 
 
+def test_model_selection_section_text_explains_report_scope() -> None:
+    assert MODEL_SELECTION_TAB_LABEL == "Como o modelo principal foi escolhido"
+    assert "nao muda a cada consulta" in MODEL_SELECTION_EXPLANATION
+    assert "conjunto de avaliacao usado no treinamento" in MODEL_SELECTION_EXPLANATION
+    assert "melhor modelo salvo localmente" in MODEL_SELECTION_EXPLANATION
+    assert "f1_macro, nao accuracy" in MODEL_SELECTION_METRIC_NOTE
+    assert "classes desbalanceadas" in MODEL_SELECTION_METRIC_NOTE
+    assert "classe majoritaria" in MODEL_SELECTION_METRIC_NOTE
+
+
 def test_extract_best_model_summary() -> None:
     summary = extract_best_model_summary(make_report())
 
@@ -208,6 +221,11 @@ def test_build_main_result_summary_prioritizes_ml_when_available() -> None:
     assert summary["final_risk"] == "moderado"
     assert summary["ml_risk"] == "moderado"
     assert summary["rule_risk"] == "alto"
+    assert summary["event_type"] == "baixa_umidade"
+    assert summary["attention_level"] == "Atencao e acompanhamento"
+    assert "Atencao" in summary["warning_text"]
+    assert "hidratacao" in summary["public_recommendation"]
+    assert "autoridades" not in summary["warning_text"].lower()
     assert summary["anomaly_count"] == 1
     assert summary["model_name"] == "random_forest"
 
@@ -256,10 +274,25 @@ def test_build_divergence_message_without_model() -> None:
 
 
 def test_build_risk_recommendation_for_all_levels() -> None:
-    assert "Monitorar normalmente" in build_risk_recommendation("baixo")
-    assert "Manter atencao" in build_risk_recommendation("moderado")
-    assert "atencao reforcada" in build_risk_recommendation("alto")
-    assert "medidas preventivas" in build_risk_recommendation("critico")
+    assert "rotina normal" in build_risk_recommendation("baixo")
+    assert "Acompanhar atualizacoes" in build_risk_recommendation("moderado")
+    assert "medidas preventivas" in build_risk_recommendation("alto")
+    assert "exposicao desnecessaria" in build_risk_recommendation("critico")
+
+
+def test_build_result_explanation_includes_warning_and_practical_guidance() -> None:
+    explanation = build_result_explanation(
+        {"available": True, "prediction": "alto"},
+        make_risk(),
+        make_analysis_result(),
+        weather_data=make_weather_data(),
+        selected_station={"station_label": "MANAUS - AM | A101"},
+    )
+
+    assert "Evidencias consideradas" in explanation
+    assert "Recomendacao pratica" in explanation
+    assert "MANAUS - AM | A101" in explanation
+    assert "hidratacao" in explanation
 
 
 def test_build_evidence_summary_contains_compact_fields() -> None:
