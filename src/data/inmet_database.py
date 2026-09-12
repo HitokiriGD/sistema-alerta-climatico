@@ -1,8 +1,15 @@
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import duckdb
 import pandas as pd
+import requests
+
+from scripts.download_inmet_database import download_inmet_database
+from scripts.download_inmet_database import InmetDatabaseDownloadError
+from src.config.settings import Settings
+from src.config.settings import sanitize_sensitive_text
 
 
 INMET_HOURLY_TABLE = "inmet_hourly"
@@ -30,6 +37,74 @@ INMET_HOURLY_COLUMNS = [
 def database_exists(path: str | Path) -> bool:
     """Verifica se o arquivo DuckDB historico existe."""
     return Path(path).exists() and Path(path).is_file()
+
+
+def ensure_inmet_database_available(
+    settings: Settings,
+    downloader: Callable[..., Path] = download_inmet_database,
+) -> dict[str, object]:
+    """Garante a base DuckDB local, baixando da release quando necessario."""
+    database_path = Path(settings.inmet_database_path)
+    sensitive_values = [
+        settings.github_token,
+        settings.inmet_database_url,
+        settings.database_url,
+    ]
+
+    if database_exists(database_path):
+        return {
+            "available": True,
+            "downloaded": False,
+            "path": str(database_path),
+            "message": "Base historica INMET ja disponivel localmente.",
+            "error_message": "",
+        }
+
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        saved_path = downloader(
+            url=settings.inmet_database_url,
+            destination=database_path,
+            force=False,
+            expected_sha256=settings.inmet_database_sha256,
+            release_repo=settings.inmet_database_release_repo,
+            release_tag=settings.inmet_database_release_tag,
+            asset_name=settings.inmet_database_asset_name,
+            github_token=settings.github_token,
+        )
+    except (
+        InmetDatabaseDownloadError,
+        requests.RequestException,
+        ValueError,
+        OSError,
+    ) as error:
+        return {
+            "available": False,
+            "downloaded": False,
+            "path": str(database_path),
+            "message": "",
+            "error_message": sanitize_sensitive_text(error, sensitive_values),
+        }
+
+    if database_exists(saved_path):
+        return {
+            "available": True,
+            "downloaded": True,
+            "path": str(saved_path),
+            "message": "Base historica INMET carregada com sucesso.",
+            "error_message": "",
+        }
+
+    return {
+        "available": False,
+        "downloaded": False,
+        "path": str(database_path),
+        "message": "",
+        "error_message": (
+            "Download finalizado, mas o arquivo DuckDB nao foi encontrado no "
+            "caminho configurado."
+        ),
+    }
 
 
 def load_station_history_from_database(

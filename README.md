@@ -620,6 +620,19 @@ INMET_DATABASE_SHA256 = "sha256_do_asset"
 privados. `DATABASE_URL` so e necessario para a coleta continua em
 Supabase/Postgres; a consulta do dashboard nao deve imprimir esse valor.
 
+No Streamlit Cloud, o arquivo `data/processed/inmet_historical.duckdb` nao fica
+versionado no repositorio. Quando a analise historica for usada pela primeira
+vez e o DuckDB ainda nao existir no ambiente, o dashboard tenta baixar
+automaticamente o asset configurado em `INMET_DATABASE_RELEASE_REPO`,
+`INMET_DATABASE_RELEASE_TAG`, `INMET_DATABASE_ASSET_NAME` e
+`INMET_DATABASE_SHA256`. O hash SHA256 e validado quando configurado.
+
+Como a release atual e publica, `GITHUB_TOKEN` e opcional. Se a release voltar
+a ser privada, configure `GITHUB_TOKEN` nos secrets do Streamlit Cloud para
+permitir leitura do asset sem expor o token no app. Se o download falhar, a
+demo continua com dados atuais da OpenWeather, regras tecnicas e Machine
+Learning quando disponivel, mas sem comparacao historica INMET.
+
 Arquivos grandes e sensiveis nao sao versionados:
 
 - `.env`;
@@ -631,7 +644,8 @@ Arquivos grandes e sensiveis nao sao versionados:
 O dashboard abre em tres niveis:
 
 1. Sem DuckDB, sem modelo e sem relatorio: a tela abre e orienta como baixar ou
-   gerar os artefatos.
+   gerar os artefatos. Ao executar a analise historica, tenta baixar o DuckDB
+   automaticamente da release configurada.
 2. Com DuckDB e OpenWeather: consulta atual e comparacao historica funcionam.
 3. Com DuckDB, modelo e relatorio: a demo completa exibe ML, historico e
    comparacao dos modelos.

@@ -6,9 +6,22 @@ import pandas as pd
 from src.data.inmet_database import INMET_HOURLY_COLUMNS
 from src.data.inmet_database import INMET_HOURLY_TABLE
 from src.data.inmet_database import database_exists
+from src.data.inmet_database import ensure_inmet_database_available
 from src.data.inmet_database import get_available_stations_from_database
 from src.data.inmet_database import get_database_metadata
 from src.data.inmet_database import load_station_history_from_database
+
+
+class FakeSettings:
+    def __init__(self, db_path: Path) -> None:
+        self.inmet_database_path = str(db_path)
+        self.inmet_database_url = "https://example.test/inmet.duckdb?token=secret"
+        self.inmet_database_sha256 = ""
+        self.inmet_database_release_repo = "owner/repo"
+        self.inmet_database_release_tag = "tag"
+        self.inmet_database_asset_name = "inmet_historical.duckdb"
+        self.github_token = "secret-token"
+        self.database_url = "postgresql://user:secret@example/db"
 
 
 def write_test_database(db_path: Path) -> None:
@@ -84,6 +97,72 @@ def write_test_database(db_path: Path) -> None:
 
 def test_database_exists_false_for_missing_file(tmp_path) -> None:
     assert database_exists(tmp_path / "missing.duckdb") is False
+
+
+def test_ensure_inmet_database_available_skips_download_when_exists(tmp_path) -> None:
+    db_path = tmp_path / "data" / "processed" / "inmet_historical.duckdb"
+    db_path.parent.mkdir(parents=True)
+    db_path.write_bytes(b"existing")
+    calls = []
+
+    def fake_downloader(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("download nao deveria ser chamado")
+
+    status = ensure_inmet_database_available(
+        FakeSettings(db_path),
+        downloader=fake_downloader,
+    )
+
+    assert status["available"] is True
+    assert status["downloaded"] is False
+    assert status["path"] == str(db_path)
+    assert calls == []
+
+
+def test_ensure_inmet_database_available_downloads_when_missing(tmp_path) -> None:
+    db_path = tmp_path / "data" / "processed" / "inmet_historical.duckdb"
+    calls = []
+
+    def fake_downloader(**kwargs):
+        calls.append(kwargs)
+        destination = Path(kwargs["destination"])
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"duckdb")
+        return destination
+
+    status = ensure_inmet_database_available(
+        FakeSettings(db_path),
+        downloader=fake_downloader,
+    )
+
+    assert status["available"] is True
+    assert status["downloaded"] is True
+    assert db_path.exists()
+    assert db_path.parent.is_dir()
+    assert calls[0]["github_token"] == "secret-token"
+    assert calls[0]["release_repo"] == "owner/repo"
+
+
+def test_ensure_inmet_database_available_returns_safe_error(tmp_path) -> None:
+    db_path = tmp_path / "data" / "processed" / "inmet_historical.duckdb"
+
+    def fake_downloader(**kwargs):
+        raise ValueError(
+            "falha com secret-token e https://example.test/inmet.duckdb?token=secret"
+        )
+
+    status = ensure_inmet_database_available(
+        FakeSettings(db_path),
+        downloader=fake_downloader,
+    )
+
+    assert status["available"] is False
+    assert status["downloaded"] is False
+    assert db_path.parent.is_dir()
+    assert "secret-token" not in str(status["error_message"])
+    assert "token=secret" not in str(status["error_message"])
+    assert "[valor sensivel oculto]" in str(status["error_message"])
 
 
 def test_load_station_history_from_database_filters_station_and_year(tmp_path) -> None:

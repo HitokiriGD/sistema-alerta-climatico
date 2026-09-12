@@ -27,6 +27,7 @@ from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
 from src.data.inmet_client import normalize_city_name
 from src.data.inmet_database import database_exists
+from src.data.inmet_database import ensure_inmet_database_available
 from src.data.inmet_database import get_available_stations_from_database
 from src.data.inmet_database import get_database_metadata
 from src.data.inmet_database import load_station_history_from_database
@@ -233,10 +234,10 @@ def build_deploy_artifact_guidance(
 
     if not database_exists(settings.inmet_database_path):
         guidance.append(
-            "Base historica INMET DuckDB nao encontrada. Configure "
-            "INMET_DATABASE_* e execute "
-            f"{INMET_DATABASE_DOWNLOAD_COMMAND}, ou gere a base localmente com "
-            "python scripts/build_inmet_duckdb.py."
+            "Base historica INMET DuckDB nao encontrada. O dashboard tentara "
+            "baixar automaticamente da GitHub Release no primeiro uso da "
+            "analise historica. Para preparar localmente antes de abrir o app, "
+            f"execute {INMET_DATABASE_DOWNLOAD_COMMAND}."
         )
 
     if not model_files_available(model_path, metadata_path):
@@ -254,6 +255,36 @@ def build_deploy_artifact_guidance(
         )
 
     return [safe_dashboard_message(message, settings) for message in guidance]
+
+
+@st.cache_resource(show_spinner=False)
+def ensure_inmet_database_available_for_app(settings: Settings) -> dict[str, object]:
+    """Garante a base DuckDB uma vez por sessao do Streamlit."""
+    return ensure_inmet_database_available(settings)
+
+
+def prepare_inmet_database_for_historical_flow(settings: Settings) -> dict[str, object]:
+    """Prepara o DuckDB historico antes de consultar catalogo e series."""
+    database_was_available = database_exists(settings.inmet_database_path)
+    if database_was_available:
+        return ensure_inmet_database_available_for_app(settings)
+
+    st.info("Preparando base historica INMET...")
+    with st.spinner("Preparando base historica INMET..."):
+        status = ensure_inmet_database_available_for_app(settings)
+
+    if status.get("available"):
+        st.success("Base historica INMET carregada com sucesso.")
+        return status
+
+    st.warning(
+        "Nao foi possivel baixar a base historica. A consulta continuara "
+        "apenas com dados atuais e regras tecnicas."
+    )
+    error_message = str(status.get("error_message") or "").strip()
+    if error_message:
+        st.info(safe_dashboard_message(error_message, settings))
+    return status
 
 
 def show_deploy_artifact_guidance(settings: Settings) -> None:
@@ -2076,6 +2107,15 @@ def show_simplified_analysis_section(
     prediction_result = get_ml_prediction_for_dashboard(weather_data)
     requested_period = format_requested_period(start_year, end_year)
     client = InmetClient(settings)
+    database_status = prepare_inmet_database_for_historical_flow(settings)
+    if not database_status.get("available"):
+        show_analysis_result_flow(
+            weather_data=weather_data,
+            risk=risk,
+            prediction_result=prediction_result,
+            requested_period=requested_period,
+        )
+        return
 
     try:
         station_catalog, historical_source = load_station_catalog_for_app(
@@ -2220,6 +2260,20 @@ def show_inmet_historical_section(
 
     prediction_result = get_ml_prediction_for_dashboard(weather_data)
     client = InmetClient(settings)
+    database_status = prepare_inmet_database_for_historical_flow(settings)
+    if not database_status.get("available"):
+        if risk is not None:
+            show_intelligent_diagnosis_section(prediction_result, risk, None)
+            st.subheader("3. Predição por Machine Learning")
+            show_ml_prediction_section(weather_data, prediction_result)
+            st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
+            show_model_comparison_section()
+            st.subheader("5. Explicabilidade Técnica por Regras")
+            show_weather_risk(risk)
+            st.subheader("6. Resumo")
+            st.write(build_interpretive_summary(weather_data, risk, None, None))
+        return
+
     try:
         station_catalog, historical_source = load_station_catalog_for_app(
             settings,
