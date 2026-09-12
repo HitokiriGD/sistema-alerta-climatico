@@ -19,6 +19,7 @@ from src.alerts.risk_classifier import WeatherRisk
 from src.alerts.risk_classifier import classify_weather_risk
 from src.config.settings import Settings
 from src.config.settings import load_settings
+from src.config.settings import sanitize_sensitive_text
 from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
 from src.data.inmet_client import normalize_city_name
@@ -29,7 +30,10 @@ from src.data.inmet_database import load_station_history_from_database
 from src.data.openweather_client import OpenWeatherClient
 from src.data.weather_client import normalize_weather_payload
 from src.ml.predict import METHODOLOGICAL_NOTE
+from src.ml.predict import DEFAULT_METADATA_PATH
+from src.ml.predict import DEFAULT_MODEL_PATH
 from src.ml.predict import load_model_bundle
+from src.ml.predict import model_files_available
 from src.ml.predict import predict_risk_level
 
 
@@ -119,6 +123,17 @@ ML_EVALUATION_COMMAND = (
     "python scripts/evaluate_ml_models.py --split temporal "
     "--train-end-year 2024 --test-start-year 2025"
 )
+ML_DATASET_COMMAND = (
+    "python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 "
+    "--stations A001,A101,A312"
+)
+ML_TRAINING_COMMAND = "python scripts/train_ml_models.py"
+INMET_DATABASE_DOWNLOAD_COMMAND = "python scripts/download_inmet_database.py"
+RUNTIME_ARTIFACT_DIRS = (
+    Path("data/processed"),
+    Path("data/models"),
+    Path("data/reports"),
+)
 METHODOLOGICAL_NOTE_SHORT = (
     "O modelo foi treinado com rotulos derivados de regras tecnicas. "
     "A previsao representa uma classificacao supervisionada aprendida, "
@@ -162,6 +177,84 @@ RISK_RECOMMENDATIONS = {
         "alertas locais."
     ),
 }
+
+
+def ensure_runtime_artifact_directories(
+    project_root: str | Path = PROJECT_ROOT,
+) -> list[Path]:
+    """Cria diretorios locais usados por artefatos gerados em runtime."""
+    root = Path(project_root)
+    created_or_existing_dirs = []
+    for relative_dir in RUNTIME_ARTIFACT_DIRS:
+        artifact_dir = root / relative_dir
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        created_or_existing_dirs.append(artifact_dir)
+    return created_or_existing_dirs
+
+
+def sensitive_values_from_settings(settings: Settings) -> list[str]:
+    """Lista valores sensiveis que nunca devem aparecer em mensagens."""
+    return [
+        settings.openweather_api_key,
+        settings.github_token,
+        settings.database_url,
+        settings.inmet_database_url,
+    ]
+
+
+def safe_dashboard_message(message: object, settings: Settings) -> str:
+    """Remove segredos conhecidos antes de exibir texto no dashboard."""
+    return sanitize_sensitive_text(message, sensitive_values_from_settings(settings))
+
+
+def build_deploy_artifact_guidance(
+    settings: Settings,
+    report_dir: str | Path = PROJECT_ROOT / "data/reports",
+    model_path: str | Path = PROJECT_ROOT / DEFAULT_MODEL_PATH,
+    metadata_path: str | Path = PROJECT_ROOT / DEFAULT_METADATA_PATH,
+) -> list[str]:
+    """Monta orientacoes curtas quando artefatos locais nao existem."""
+    guidance = []
+
+    if not database_exists(settings.inmet_database_path):
+        guidance.append(
+            "Base historica INMET DuckDB nao encontrada. Configure "
+            "INMET_DATABASE_* e execute "
+            f"{INMET_DATABASE_DOWNLOAD_COMMAND}, ou gere a base localmente com "
+            "python scripts/build_inmet_duckdb.py."
+        )
+
+    if not model_files_available(model_path, metadata_path):
+        guidance.append(
+            "Modelo ML local nao encontrado. Gere o dataset, treine o modelo "
+            f"com {ML_DATASET_COMMAND} e {ML_TRAINING_COMMAND}, ou publique os "
+            "artefatos em uma release futuramente."
+        )
+
+    report_status = load_ml_evaluation_report(report_dir)
+    if not report_status["available"]:
+        guidance.append(
+            "Relatorio de avaliacao ML nao encontrado. Depois de gerar dataset "
+            f"e treinar o modelo, execute {ML_EVALUATION_COMMAND}."
+        )
+
+    return [safe_dashboard_message(message, settings) for message in guidance]
+
+
+def show_deploy_artifact_guidance(settings: Settings) -> None:
+    """Mostra orientacao amigavel para demos sem artefatos locais."""
+    guidance = build_deploy_artifact_guidance(settings)
+    if not guidance:
+        return
+
+    with st.container(border=True):
+        st.markdown("#### Artefatos opcionais da demo")
+        st.write(
+            "O dashboard abre mesmo sem DuckDB, modelo ou relatorios locais. "
+            "Para ativar a experiencia completa:"
+        )
+        for message in guidance:
+            st.write(f"- {message}")
 
 
 def build_manual_weather_data() -> dict[str, object]:
@@ -470,7 +563,8 @@ def load_ml_evaluation_report(report_dir: str | Path = "data/reports") -> dict[s
         "report_path": "",
         "source": "",
         "error_message": (
-            "Relatorio de avaliacao ML nao encontrado. Gere com "
+            "Relatorio de avaliacao ML nao encontrado. Depois de gerar o "
+            "dataset e treinar o modelo, gere a avaliacao com "
             f"{ML_EVALUATION_COMMAND}."
         ),
     }
@@ -1808,8 +1902,9 @@ def build_historical_source_status(
         "source_label": "ZIPs locais",
         "status": "Base historica processada nao encontrada",
         "details": (
-            "O dashboard usara os ZIPs locais do INMET como fallback quando "
-            "eles estiverem disponiveis."
+            "O dashboard tentara usar os ZIPs locais do INMET como fallback "
+            "quando eles estiverem disponiveis. Em ambiente online sem ZIPs, "
+            "a consulta historica ficara indisponivel sem derrubar o app."
         ),
         "guidance": (
             "Para baixar a base processada, execute: "
@@ -1844,7 +1939,12 @@ def show_simplified_analysis_section(
             client,
         )
     except InmetHistoricalDataError as error:
-        st.warning(str(error))
+        st.warning(safe_dashboard_message(error, settings))
+        st.info(
+            "A consulta continua com dados atuais, regras tecnicas e camada ML "
+            "quando houver modelo. Para habilitar historico INMET online, "
+            "configure o DuckDB por release ou inclua ZIPs locais no ambiente."
+        )
         show_analysis_result_flow(
             weather_data=weather_data,
             risk=risk,
@@ -1894,7 +1994,7 @@ def show_simplified_analysis_section(
             historical_source,
         )
     except InmetHistoricalDataError as error:
-        st.warning(str(error))
+        st.warning(safe_dashboard_message(error, settings))
         show_analysis_result_flow(
             weather_data=weather_data,
             risk=risk,
@@ -1982,7 +2082,7 @@ def show_inmet_historical_section(
             client,
         )
     except InmetHistoricalDataError as error:
-        st.warning(str(error))
+        st.warning(safe_dashboard_message(error, settings))
         if risk is not None:
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
@@ -2039,7 +2139,7 @@ def show_inmet_historical_section(
             historical_source,
         )
     except InmetHistoricalDataError as error:
-        st.warning(str(error))
+        st.warning(safe_dashboard_message(error, settings))
         if risk is not None:
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
@@ -2773,6 +2873,7 @@ def show_initial_state_guidance() -> None:
 def main() -> None:
     """Executa o dashboard Streamlit do projeto."""
     settings = load_settings()
+    ensure_runtime_artifact_directories()
 
     st.set_page_config(page_title="Sistema de Alerta Climatico", layout="wide")
     apply_dashboard_style()
@@ -2825,6 +2926,7 @@ def main() -> None:
 
     if not active_query or not weather_data:
         show_initial_state_guidance()
+        show_deploy_artifact_guidance(settings)
         return
 
     active_start_year = int(active_query["start_year"])

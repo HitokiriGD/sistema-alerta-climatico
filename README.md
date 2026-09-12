@@ -591,6 +591,58 @@ classificacao tecnica por regras. Essa escolha torna o prototipo interpretavel
 para a banca, mas as metricas e predicoes nao representam validacao contra
 eventos reais oficiais de desastre.
 
+## Deploy no Streamlit Community Cloud
+
+O app esta preparado para rodar como demo no Streamlit Community Cloud usando:
+
+```text
+app/streamlit_app.py
+```
+
+Use preferencialmente a branch `main` para publicar a demo. Branches de feature
+podem ser usadas para teste, mas a URL publica deve apontar para uma versao
+revisada.
+
+Configure os secrets no painel do Streamlit Cloud, sem commitar `.env`:
+
+```toml
+OPENWEATHER_API_KEY = "sua_chave_openweather"
+GITHUB_TOKEN = "opcional_se_release_privada"
+DATABASE_URL = "opcional_para_supabase_postgres"
+INMET_DATABASE_PATH = "data/processed/inmet_historical.duckdb"
+INMET_DATABASE_RELEASE_REPO = "HitokiriGD/sistema-alerta-climatico"
+INMET_DATABASE_RELEASE_TAG = "inmet-db-v1"
+INMET_DATABASE_ASSET_NAME = "inmet_historical.duckdb"
+INMET_DATABASE_SHA256 = "sha256_do_asset"
+```
+
+`GITHUB_TOKEN` so e necessario se o repositorio ou a release do DuckDB forem
+privados. `DATABASE_URL` so e necessario para a coleta continua em
+Supabase/Postgres; a consulta do dashboard nao deve imprimir esse valor.
+
+Arquivos grandes e sensiveis nao sao versionados:
+
+- `.env`;
+- `data/processed/`;
+- `data/models/`;
+- `data/reports/`;
+- arquivos `*.duckdb`, `*.joblib`, `*.parquet`, `*.csv` e `*.zip`.
+
+O dashboard abre em tres niveis:
+
+1. Sem DuckDB, sem modelo e sem relatorio: a tela abre e orienta como baixar ou
+   gerar os artefatos.
+2. Com DuckDB e OpenWeather: consulta atual e comparacao historica funcionam.
+3. Com DuckDB, modelo e relatorio: a demo completa exibe ML, historico e
+   comparacao dos modelos.
+
+Antes de publicar, valide localmente:
+
+```powershell
+python -m pytest
+streamlit run app/streamlit_app.py
+```
+
 ## Classificador por Regras
 
 A etapa atual implementa um classificador inicial por regras em
