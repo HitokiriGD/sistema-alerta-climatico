@@ -13,8 +13,8 @@ def test_streamlit_theme_is_light() -> None:
     config = tomllib.loads(Path(".streamlit/config.toml").read_text(encoding="utf-8"))
 
     assert config["theme"]["base"] == "light"
-    assert config["theme"]["backgroundColor"] == "#ffffff"
-    assert config["theme"]["secondaryBackgroundColor"] == "#f8fafc"
+    assert config["theme"]["backgroundColor"] == "#f8fafc"
+    assert config["theme"]["secondaryBackgroundColor"] == "#ffffff"
     assert config["theme"]["textColor"] == "#0f172a"
 
 
@@ -45,4 +45,7 @@ def test_custom_css_does_not_force_dark_global_theme() -> None:
 
     assert "#111827" not in style_source
     assert "#0f172a 100%" not in style_source
+    app_rule = style_source.split(".stApp {", 1)[1].split("}", 1)[0]
+    assert "background: #f8fafc" in app_rule
+    assert "background: #ffffff" not in app_rule
     assert "background: #ffffff" in style_source
