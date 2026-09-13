@@ -1,4 +1,5 @@
 import math
+import re
 import sys
 from dataclasses import replace
 import json
@@ -105,6 +106,62 @@ EVENT_LABELS = {
     "chuva_intensa": "chuva intensa",
     "vento_forte": "vento forte",
     "risco_incendio": "risco de incendio",
+}
+PRIMARY_EVENT_LABELS = {
+    "sem_risco_relevante": "Nenhum evento relevante destacado",
+    "baixa_umidade": "Baixa umidade",
+    "calor_extremo": "Estresse térmico por calor",
+    "frio_intenso": "Frio intenso",
+    "chuva_intensa": "Chuva intensa",
+    "vento_forte": "Vento forte",
+    "risco_incendio": "Condição favorável a risco potencial de incêndio",
+}
+EVENT_FACTOR_CATEGORIES = {
+    "baixa_umidade": "umidade",
+    "calor_extremo": "calor",
+    "frio_intenso": "frio",
+    "chuva_intensa": "chuva",
+    "vento_forte": "vento",
+    "risco_incendio": "incendio",
+}
+ANOMALY_FACTOR_DEFINITIONS = {
+    "HIGH_TEMPERATURE": ("Temperatura acima do padrão histórico", "calor"),
+    "LOW_HUMIDITY": ("Baixa umidade em relação ao padrão histórico", "umidade"),
+    "HIGH_PRECIPITATION": ("Chuva acima do padrão histórico", "chuva"),
+    "HIGH_WIND": ("Vento acima do padrão histórico", "vento"),
+    "PRESSURE_ANOMALY": (
+        "Pressão atmosférica fora do padrão histórico",
+        "pressao",
+    ),
+    "POTENTIAL_FIRE_RISK": (
+        "Condição favorável a risco potencial de incêndio",
+        "incendio",
+    ),
+}
+RULE_FACTOR_LABELS = {
+    "baixa_umidade": "Baixa umidade",
+    "calor_extremo": "Estresse térmico por calor",
+    "frio_intenso": "Frio intenso",
+    "chuva_intensa": "Chuva intensa",
+    "vento_forte": "Vento forte",
+    "risco_incendio": "Condição favorável a risco potencial de incêndio",
+}
+FACTOR_RECOMMENDATIONS = {
+    "calor": "Reforçar hidratação e reduzir exposição prolongada ao calor.",
+    "umidade": "Reforçar hidratação e observar desconforto respiratório.",
+    "frio": "Usar proteção térmica e reduzir exposição prolongada ao frio.",
+    "chuva": "Acompanhar acumulados e ter atenção preventiva em deslocamentos.",
+    "vento": "Acompanhar o vento e verificar objetos ou estruturas expostas.",
+    "pressao": "Acompanhar a evolução da pressão junto às demais variáveis.",
+    "incendio": (
+        "Evitar queimadas e acompanhar umidade, vento e vegetação seca."
+    ),
+}
+FACTOR_SEVERITY_ORDER = {
+    "baixo": 0,
+    "moderado": 1,
+    "alto": 2,
+    "critico": 3,
 }
 ANOMALY_SUMMARY_TEXT = {
     "HIGH_TEMPERATURE": "a temperatura esta acima do padrao esperado",
@@ -856,6 +913,227 @@ def _selected_station_label(selected_station: dict[str, object] | None) -> str:
     )
 
 
+def build_primary_event_label(event_type: object | None) -> str:
+    """Traduz o tipo tecnico para o destaque principal do dashboard."""
+    normalized = str(event_type or "sem_risco_relevante").strip().lower()
+    return PRIMARY_EVENT_LABELS.get(
+        normalized,
+        "Evento meteorológico em análise",
+    )
+
+
+def build_factor_label(factor_type: object, source: str) -> str:
+    """Monta um rotulo seguro para regra ou anomalia historica."""
+    normalized = str(factor_type or "").strip()
+    if source == "historical":
+        definition = ANOMALY_FACTOR_DEFINITIONS.get(normalized.upper())
+        return definition[0] if definition else "Sinal histórico complementar"
+    return RULE_FACTOR_LABELS.get(normalized.lower(), "Fator meteorológico associado")
+
+
+def build_factor_source(source: object) -> str:
+    """Traduz a origem tecnica de um fator para texto de interface."""
+    sources = {item.strip().lower() for item in str(source or "").split("+")}
+    has_rule = "rule" in sources
+    has_history = "historical" in sources
+    if has_rule and has_history:
+        return "Regra técnica e comparação histórica INMET"
+    if has_history:
+        return "Comparação histórica INMET"
+    if has_rule:
+        return "Regra técnica"
+    return "Evidência meteorológica"
+
+
+def build_factor_severity(
+    severity: object,
+    prediction: dict[str, object] | None = None,
+) -> str:
+    """Normaliza severidades de regras, historico e fallback do modelo."""
+    normalized = str(severity or "").strip().lower()
+    aliases = {
+        "low": "baixo",
+        "medium": "moderado",
+        "high": "alto",
+        "critical": "critico",
+        "baixo": "baixo",
+        "moderado": "moderado",
+        "alto": "alto",
+        "critico": "critico",
+        "crítico": "critico",
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+
+    predicted_level = str((prediction or {}).get("prediction") or "").lower()
+    return aliases.get(predicted_level, "moderado")
+
+
+def _rule_event_type(rule: object) -> str:
+    text = str(rule or "").strip().lower()
+    for event_type in RULE_FACTOR_LABELS:
+        if text.startswith(event_type):
+            return event_type
+    return ""
+
+
+def _rule_severity(rule: object) -> str:
+    match = re.search(r"\((baixo|moderado|alto|critico|crítico)\)", str(rule), re.I)
+    if match:
+        return match.group(1)
+
+    text = str(rule or "").lower()
+    for severity in ("critico", "crítico", "alto", "moderado", "baixo"):
+        if severity in text:
+            return severity
+    return ""
+
+
+def _factor_category(factor_type: object, source: str) -> str:
+    normalized = str(factor_type or "").strip()
+    if source == "historical":
+        definition = ANOMALY_FACTOR_DEFINITIONS.get(normalized.upper())
+        return definition[1] if definition else ""
+    return EVENT_FACTOR_CATEGORIES.get(normalized.lower(), "")
+
+
+def _factor_description(
+    label: str,
+    reason: object,
+    variables: dict[str, object],
+) -> str:
+    reason_text = str(reason or "").strip()
+    if reason_text:
+        return reason_text
+
+    available_variables = sum(
+        value is not None
+        for value in variables.values()
+    )
+    if available_variables:
+        return f"{label}, identificado a partir dos dados disponíveis."
+    return f"{label}, mantido como sinal complementar da consulta."
+
+
+def _higher_factor_severity(current: str, candidate: str) -> str:
+    if FACTOR_SEVERITY_ORDER.get(candidate, 0) > FACTOR_SEVERITY_ORDER.get(current, 0):
+        return candidate
+    return current
+
+
+def build_associated_risk_factors(
+    event_type: object | None,
+    triggered_rules: list[object] | None = None,
+    anomalies: list[dict[str, object]] | None = None,
+    variables: dict[str, object] | None = None,
+    weather_data: dict[str, object] | None = None,
+    prediction: dict[str, object] | None = None,
+) -> list[dict[str, str]]:
+    """Extrai sinais complementares sem repetir o evento principal."""
+    primary_category = EVENT_FACTOR_CATEGORIES.get(
+        str(event_type or "").strip().lower(),
+        "",
+    )
+    available_variables = {**(weather_data or {}), **(variables or {})}
+    factors_by_category: dict[str, dict[str, str]] = {}
+
+    def add_factor(
+        factor_type: object,
+        source: str,
+        severity: object,
+        reason: object,
+    ) -> None:
+        category = _factor_category(factor_type, source)
+        if not category or category == primary_category:
+            return
+
+        label = build_factor_label(factor_type, source)
+        normalized_severity = build_factor_severity(severity, prediction)
+        existing = factors_by_category.get(category)
+        if existing:
+            existing["severity"] = _higher_factor_severity(
+                existing["severity"],
+                normalized_severity,
+            )
+            candidate_source = build_factor_source(source)
+            if existing["source"] != candidate_source:
+                existing["source"] = build_factor_source("historical+rule")
+            return
+
+        factors_by_category[category] = {
+            "label": label,
+            "category": category,
+            "severity": normalized_severity,
+            "source": build_factor_source(source),
+            "description": _factor_description(label, reason, available_variables),
+        }
+
+    for anomaly in anomalies or []:
+        if not isinstance(anomaly, dict):
+            continue
+        add_factor(
+            anomaly.get("anomaly_type"),
+            "historical",
+            anomaly.get("severity"),
+            anomaly.get("reason"),
+        )
+
+    for rule in triggered_rules or []:
+        rule_event = _rule_event_type(rule)
+        if rule_event:
+            add_factor(rule_event, "rule", _rule_severity(rule), rule)
+
+    return list(factors_by_category.values())
+
+
+def build_factor_summary_text(
+    factors: list[dict[str, str]] | None,
+    limit: int = 3,
+) -> str:
+    """Resume fatores associados em uma frase curta e sem dados brutos."""
+    labels = [str(factor.get("label") or "").strip() for factor in factors or []]
+    labels = [label for label in labels if label]
+    if not labels:
+        return (
+            "Nenhum fator associado relevante foi destacado pelas regras ou "
+            "pela comparação histórica."
+        )
+
+    visible = [label[:1].lower() + label[1:] for label in labels[:limit]]
+    if len(visible) == 1:
+        joined = visible[0]
+    else:
+        joined = ", ".join(visible[:-1]) + f" e {visible[-1]}"
+    suffix = ", entre outros" if len(labels) > limit else ""
+    return f"Também foram detectados fatores associados, como {joined}{suffix}."
+
+
+def build_risk_radar_items(
+    event_type: object | None,
+    factors: list[dict[str, str]] | None,
+) -> list[dict[str, str]]:
+    """Monta itens compactos para o destaque visual da interpretacao."""
+    items = [
+        {
+            "label": build_primary_event_label(event_type),
+            "category": "evento_principal",
+            "severity": "destaque",
+            "source": "Classificação principal",
+            "description": "Destaque central da análise.",
+        }
+    ]
+    items.extend(factors or [])
+    return items
+
+
+def build_factor_recommendation(factor: dict[str, str]) -> str:
+    """Retorna uma recomendacao geral proporcional ao tipo de fator."""
+    return FACTOR_RECOMMENDATIONS.get(
+        str(factor.get("category") or ""),
+        "Acompanhar o sinal nas próximas atualizações meteorológicas.",
+    )
+
+
 def build_main_result_summary(
     ml_prediction: dict[str, object] | None,
     risk: WeatherRisk | None,
@@ -880,6 +1158,18 @@ def build_main_result_summary(
         else "Resultado baseado em regras tecnicas e historico quando disponivel"
     )
     event_type = risk.event_type if risk is not None else "sem_risco_relevante"
+    anomalies = (analysis_result or {}).get("anomalies", [])
+    if not isinstance(anomalies, list):
+        anomalies = []
+    associated_factors = build_associated_risk_factors(
+        event_type,
+        triggered_rules=risk.triggered_rules if risk is not None else [],
+        anomalies=anomalies,
+        variables=risk.variables if risk is not None else {},
+        weather_data=weather_data,
+        prediction=prediction,
+    )
+    primary_event_label = build_primary_event_label(event_type)
     anomaly_count = _historical_anomaly_count(analysis_result)
     main_anomaly = (
         _main_historical_anomaly_text(analysis_result) or "sem anomalia destacada"
@@ -906,6 +1196,10 @@ def build_main_result_summary(
         ),
         "rule_risk": rule_risk or "indisponivel",
         "event_type": event_type,
+        "primary_event_label": primary_event_label,
+        "associated_factors": associated_factors,
+        "factor_summary": build_factor_summary_text(associated_factors),
+        "risk_radar_items": build_risk_radar_items(event_type, associated_factors),
         "anomaly_count": anomaly_count,
         "main_anomaly": main_anomaly,
         "attention_level": warning["action_level"],
@@ -962,24 +1256,33 @@ def build_main_diagnosis_text(summary: dict[str, object]) -> str:
     final_risk = str(summary.get("final_risk") or "indisponivel").lower()
     ml_risk = str(summary.get("ml_risk") or "indisponivel").lower()
     rule_risk = str(summary.get("rule_risk") or "indisponivel").lower()
+    primary_event = str(
+        summary.get("primary_event_label")
+        or build_primary_event_label(summary.get("event_type"))
+    ).strip()
 
     if ml_risk != "indisponivel":
         sentences = [
-            f"O modelo supervisionado classificou a consulta como risco {final_risk}.",
+            "O modelo supervisionado classificou a consulta como risco "
+            f"{final_risk}, tendo {primary_event.lower()} como evento principal "
+            "e principal evidencia.",
         ]
     else:
         sentences = [
             "A consulta foi classificada pelas regras tecnicas como "
-            f"risco {final_risk}.",
+            f"risco {final_risk}, tendo {primary_event.lower()} como evento "
+            "principal e principal evidencia.",
         ]
 
-    sentences.append(build_short_result_explanation(summary))
+    factors = summary.get("associated_factors")
+    if not isinstance(factors, list):
+        factors = []
+    sentences.append(build_factor_summary_text(factors))
     comparison = build_model_rule_comparison_sentence(ml_risk, rule_risk)
     if comparison:
-        sentences.append(comparison)
-    elif ml_risk == "indisponivel":
         sentences.append(
-            "A camada de Machine Learning nao esta disponivel nesta execucao."
+            f"{comparison.rstrip('.')}; por cautela, o painel mantém visíveis "
+            "os dois resultados para apoiar a decisão."
         )
 
     sentences.append(
@@ -1001,14 +1304,23 @@ def build_methodological_detail_text(
         METHODOLOGICAL_NOTE,
         str(summary.get("methodological_caution") or ""),
         (
-            "O resultado combina a predicao do modelo salvo localmente, quando "
-            "disponivel, com a classificacao por regras tecnicas exibida nos "
-            "cards e nas abas de explicabilidade."
+            "O risco principal representa o nivel agregado apresentado para a "
+            "consulta. O evento principal e o destaque tematico da classificacao "
+            "e vem do event_type calculado pelas regras tecnicas."
         ),
         (
-            "O historico INMET e usado como referencia comparativa para "
-            "anomalias, percentis e contexto da estacao; ele nao gera sozinho "
-            "um aviso atual."
+            "Os fatores associados sao sinais adicionais vindos de regras "
+            "acionadas e anomalias da comparacao historica; eles complementam a "
+            "interpretacao e nao substituem o evento principal."
+        ),
+        (
+            "O historico INMET e usado como referencia para sinais historicos, "
+            "percentis e contexto da estacao; ele nao gera sozinho um aviso atual."
+        ),
+        (
+            "O sistema estima risco potencial e nao afirma a ocorrencia real de "
+            "desastre. Risco potencial de incendio representa uma condicao "
+            "meteorologica favoravel, e nao a confirmacao de um incendio."
         ),
     ]
 
@@ -1431,6 +1743,24 @@ def show_result_analysis_section(
             st.info(_short_warning_text(summary))
 
         with col_explanation:
+            st.markdown(
+                _html_card(
+                    "Evento principal",
+                    str(summary["primary_event_label"]),
+                    "Destaque central da análise",
+                    css_class="sac-card-primary-event",
+                ),
+                unsafe_allow_html=True,
+            )
+            st.markdown("##### Fatores associados")
+            st.markdown(
+                _html_factor_chips(summary["associated_factors"]),
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Sinais complementares de regras ou comparação histórica; "
+                "não substituem o evento principal."
+            )
             st.markdown(f"#### {summary['warning_title']}")
             st.write(explanation)
             with st.expander("Detalhe metodologico"):
@@ -1486,14 +1816,29 @@ def show_warning_recommendations_section(
     st.markdown(f"#### {summary['warning_title']}")
     col_attention, col_event = st.columns(2)
     col_attention.metric("Nivel de atencao", str(summary["attention_level"]))
-    col_event.metric("Evento principal", format_event_type(summary["event_type"]))
+    col_event.metric("Evento principal", str(summary["primary_event_label"]))
     st.write(str(summary["warning_text"]))
+
+    st.markdown("##### Fatores associados")
+    st.markdown(
+        _html_factor_chips(summary["associated_factors"]),
+        unsafe_allow_html=True,
+    )
 
     with st.expander("Evidencias consideradas", expanded=True):
         st.write(str(summary["evidence_text"]))
 
-    with st.expander("Recomendacao para usuario/populacao", expanded=True):
+    with st.expander("Recomendacao geral", expanded=True):
         st.write(str(summary["public_recommendation"]))
+
+    associated_factors = summary["associated_factors"]
+    if isinstance(associated_factors, list) and associated_factors:
+        with st.expander("Recomendacoes por fator", expanded=True):
+            for factor in associated_factors:
+                st.markdown(
+                    f"- **{factor['label']}:** "
+                    f"{build_factor_recommendation(factor)}"
+                )
 
     with st.expander("Recomendacao para autoridades/responsaveis", expanded=True):
         st.write(str(summary["authority_recommendation"]))
@@ -1639,6 +1984,28 @@ def _html_card(
         f"<div class='sac-card-caption'>{_escape_html(caption)}</div>"
         "</div>"
     )
+
+
+def _html_factor_chips(factors: object) -> str:
+    if not isinstance(factors, list) or not factors:
+        return (
+            "<div class='sac-factor-empty'>"
+            "Nenhum fator associado relevante foi destacado."
+            "</div>"
+        )
+
+    chips = []
+    for factor in factors:
+        if not isinstance(factor, dict):
+            continue
+        severity = str(factor.get("severity") or "moderado")
+        label = _escape_html(factor.get("label") or "Fator associado")
+        source = _escape_html(factor.get("source") or "Evidência meteorológica")
+        chips.append(
+            f"<span class='sac-factor-chip sac-factor-{_escape_html(severity)}' "
+            f"title='{source}'>{label}</span>"
+        )
+    return "<div class='sac-factor-row'>" + "".join(chips) + "</div>"
 
 
 def _escape_html(value: object) -> str:
@@ -3093,7 +3460,7 @@ def apply_dashboard_style() -> None:
         """
         <style>
         .stApp {
-            background: #ffffff;
+            background: #f8fafc;
             color: #0f172a;
         }
         .block-container {
@@ -3107,9 +3474,9 @@ def apply_dashboard_style() -> None:
             margin-top: 1.1rem;
             margin-bottom: 1.2rem;
             background:
-                linear-gradient(135deg, #f0f9ff 0%, #ffffff 62%),
+                linear-gradient(135deg, #eff6ff 0%, #ffffff 72%),
                 linear-gradient(90deg, rgba(14, 165, 233, 0.10), rgba(20, 184, 166, 0.08));
-            box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
         }
         .sac-hero h1 {
             margin: 0.2rem 0 0.45rem 0;
@@ -3160,8 +3527,14 @@ def apply_dashboard_style() -> None:
             background: linear-gradient(180deg, #ffffff, #f0f9ff);
         }
         .sac-card-muted {
-            background: #f8fafc;
+            background: #fbfdff;
             min-height: 92px;
+        }
+        .sac-card-primary-event {
+            min-height: 108px;
+            background: linear-gradient(180deg, #ffffff, #eff6ff);
+            border-color: #bae6fd;
+            margin-bottom: 0.85rem;
         }
         .sac-card-label {
             color: #64748b;
@@ -3193,6 +3566,43 @@ def apply_dashboard_style() -> None:
             font-weight: 900;
             letter-spacing: 0;
         }
+        .sac-factor-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin: 0.35rem 0 0.55rem 0;
+        }
+        .sac-factor-chip {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #334155;
+            padding: 0.38rem 0.68rem;
+            font-size: 0.84rem;
+            font-weight: 700;
+            box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
+        }
+        .sac-factor-alto,
+        .sac-factor-critico {
+            border-color: #fdba74;
+            background: #fff7ed;
+            color: #9a3412;
+        }
+        .sac-factor-moderado {
+            border-color: #fde68a;
+            background: #fffbeb;
+            color: #854d0e;
+        }
+        .sac-factor-empty {
+            border: 1px dashed #cbd5e1;
+            border-radius: 10px;
+            background: #f8fafc;
+            color: #475569;
+            padding: 0.65rem 0.75rem;
+            font-size: 0.88rem;
+        }
         div[data-testid="stVerticalBlockBorderWrapper"] {
             background: #ffffff;
             border-color: #e2e8f0;
@@ -3207,6 +3617,18 @@ def apply_dashboard_style() -> None:
         }
         .stAlert {
             border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.42);
+        }
+        div[data-baseweb="input"] > div,
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="base-input"] {
+            background: #ffffff;
+            color: #0f172a;
+            border-color: #cbd5e1;
+        }
+        input,
+        textarea {
+            color: #0f172a !important;
         }
         h2, h3 {
             letter-spacing: 0;

@@ -556,10 +556,12 @@ Na tela, o fluxo foi simplificado para uma experiencia de consulta:
   curta do fluxo;
 - depois da busca, a primeira area exibida e `Resultado da analise`, com a
   predicao de Machine Learning supervisionado, o risco por regras, o modelo
-  usado, a metrica de selecao e a quantidade de anomalias historicas;
+  usado, a metrica de selecao, a quantidade de anomalias historicas, o evento
+  principal e os fatores associados;
 - ao lado do resultado, a area `Por que esse resultado?` apresenta um resumo
-  executivo com no maximo quatro frases: resultado, evidencia principal,
-  divergencia entre ML e regras quando existir, e recomendacao curta;
+  executivo com no maximo quatro frases: classificacao principal, evento
+  principal, fatores associados, divergencia entre ML e regras quando existir
+  e recomendacao curta;
 - `Evidencias usadas` mostra cards compactos com temperatura, sensacao termica,
   umidade, chuva, vento, pressao, estacao INMET, periodo historico e principal
   anomalia;
@@ -567,10 +569,18 @@ Na tela, o fluxo foi simplificado para uma experiencia de consulta:
   dos modelos treinados, probabilidades por classe, features usadas pelo
   modelo, regras acionadas, estatisticas historicas e variaveis brutas.
 
-O tema visual do dashboard e claro, com fundo branco e cards discretos, para
-facilitar a apresentacao do TCC. Detalhes metodologicos, variaveis completas,
-percentis, estacao INMET e cautelas ficam em abas ou expanders, evitando
-poluir o resultado principal.
+O tema visual do dashboard e claro e suave, com fundo cinza muito claro, banner
+azul claro, cards brancos, bordas suaves e sombras discretas. Essa composicao
+reduz o branco excessivo e mantem contraste adequado para a apresentacao do
+TCC. Detalhes metodologicos, variaveis completas, percentis, estacao INMET e
+cautelas ficam em abas ou expanders, evitando poluir o resultado principal.
+
+O dashboard separa o `evento principal`, que e o destaque central vindo da
+classificacao tecnica, dos `fatores associados`. Esses fatores sao sinais
+adicionais obtidos das regras acionadas e da comparacao historica, como vento
+acima do padrao, pressao fora do padrao e condicao favoravel a risco potencial
+de incendio. As anomalias historicas complementam a leitura do risco e nao
+substituem o evento principal.
 
 A comparacao dos demais modelos no dashboard e apenas de desempenho registrado
 nos relatorios locais. A predicao atual usa somente o modelo principal salvo em
@@ -754,14 +764,20 @@ chuva intensa destaca acompanhamento de deslocamentos, alagamentos e areas
 sensiveis.
 
 No dashboard, o bloco `Resultado da analise` mostra o nivel de atencao, o aviso
-principal e uma recomendacao curta. A aba `Avisos e recomendacoes`, em
-`Detalhes tecnicos`, mostra as evidencias consideradas, recomendacao completa
-para a populacao, recomendacao para responsaveis e a cautela metodologica.
+principal, o evento principal, os fatores associados e uma recomendacao curta.
+A aba `Avisos e recomendacoes`, em `Detalhes tecnicos`, mostra as evidencias
+consideradas, a recomendacao geral, recomendacoes por fator quando existirem,
+a recomendacao para responsaveis e a cautela metodologica.
 
 Esses avisos sao preventivos e interpretativos. Eles usam dados atuais,
 resultado do modelo quando disponivel, classificacao por regras e comparacao
 historica como apoio a decisao, mas nao substituem alertas oficiais, protocolos
 institucionais ou avaliacao de orgaos competentes.
+
+Uma condicao favoravel a risco potencial de incendio e apresentada como fator
+associado quando nao for o evento principal. Ela descreve uma combinacao
+meteorologica que merece atencao preventiva, sem afirmar a ocorrencia de um
+incendio.
 
 ## Comparacao Historica no Dashboard
 
@@ -782,6 +798,8 @@ historico da estacao no intervalo selecionado e executa o `HistoricalAnalyzer`.
 Na tela, o sistema prioriza o resultado principal da consulta:
 
 - `Resultado da analise`, com a conclusao supervisionada e a explicacao curta;
+- `Evento principal`, como destaque central, e `Fatores associados`, como
+  sinais adicionais de regras ou da comparacao historica;
 - `Evidencias usadas`, com os valores meteorologicos e a referencia historica;
 - `Detalhes tecnicos`, com regras acionadas, estatisticas historicas, features
   do modelo, probabilidades por classe e comparacao de desempenho dos modelos
