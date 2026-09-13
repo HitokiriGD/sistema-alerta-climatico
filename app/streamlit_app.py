@@ -2,6 +2,8 @@ import math
 import re
 import sys
 from dataclasses import replace
+from datetime import datetime
+from datetime import timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,7 @@ from src.alerts.risk_classifier import classify_weather_risk
 from src.config.settings import Settings
 from src.config.settings import load_settings
 from src.config.settings import sanitize_sensitive_text
+from src.data import weather_repository
 from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
 from src.data.inmet_client import normalize_city_name
@@ -290,6 +293,125 @@ def safe_dashboard_message(message: object, settings: Settings) -> str:
     return sanitize_sensitive_text(message, sensitive_values_from_settings(settings))
 
 
+def _build_dashboard_query_observation(
+    payload: dict[str, object],
+    requested_city: str,
+    country: str,
+    store_raw_payload: bool,
+) -> dict[str, object]:
+    """Converte uma resposta OpenWeather no contrato do repositorio."""
+    weather_data = normalize_weather_payload(payload)
+    weather_items = payload.get("weather", [])
+    first_weather = (
+        weather_items[0]
+        if isinstance(weather_items, list)
+        and weather_items
+        and isinstance(weather_items[0], dict)
+        else {}
+    )
+    clouds = payload.get("clouds", {})
+    if not isinstance(clouds, dict):
+        clouds = {}
+
+    weather_datetime = None
+    if payload.get("dt") is not None:
+        weather_datetime = datetime.fromtimestamp(
+            int(payload["dt"]),
+            timezone.utc,
+        )
+
+    return {
+        "source": "OpenWeather",
+        "city": str(weather_data.get("city", requested_city)),
+        "country": country.strip().upper() or "BR",
+        "latitude": weather_data.get("latitude"),
+        "longitude": weather_data.get("longitude"),
+        "weather_datetime": weather_datetime,
+        "temperature": weather_data.get("temperature"),
+        "feels_like": weather_data.get("feels_like"),
+        "humidity": weather_data.get("humidity"),
+        "precipitation": weather_data.get("precipitation"),
+        "wind_speed": weather_data.get("wind_speed"),
+        "pressure_sea_level_hpa": weather_data.get("pressure_sea_level_hpa"),
+        "pressure_station_hpa": weather_data.get("pressure_station_hpa"),
+        "clouds": clouds.get("all"),
+        "weather_description": first_weather.get("description"),
+        "raw_payload": payload if store_raw_payload else None,
+    }
+
+
+def persist_query_snapshot(
+    settings: Settings,
+    payload: dict[str, object],
+    requested_city: str,
+    country: str,
+    repository: object = weather_repository,
+) -> dict[str, object]:
+    """Tenta salvar uma consulta sem interromper a analise do dashboard."""
+    disabled_status = {
+        "saved": False,
+        "enabled": False,
+        "observation_id": None,
+        "message": "Persistência operacional não configurada.",
+        "error_message": None,
+    }
+    if not settings.database_url.strip():
+        return disabled_status
+
+    try:
+        observation = _build_dashboard_query_observation(
+            payload,
+            requested_city,
+            country,
+            settings.openweather_store_raw_payload,
+        )
+        with repository.connect_database(settings.database_url) as connection:
+            observation_id = repository.insert_weather_observation(
+                connection,
+                observation,
+            )
+        if observation_id is None:
+            return {
+                "saved": False,
+                "enabled": True,
+                "observation_id": None,
+                "message": (
+                    "Consulta realizada, mas não foi possível salvar na base "
+                    "operacional."
+                ),
+                "error_message": "O banco não retornou o id da observação.",
+            }
+        return {
+            "saved": True,
+            "enabled": True,
+            "observation_id": int(observation_id),
+            "message": "Consulta salva na base operacional.",
+            "error_message": None,
+        }
+    except Exception as error:
+        return {
+            "saved": False,
+            "enabled": True,
+            "observation_id": None,
+            "message": (
+                "Consulta realizada, mas não foi possível salvar na base "
+                "operacional."
+            ),
+            "error_message": (
+                "Falha controlada na persistência da consulta "
+                f"({error.__class__.__name__})."
+            ),
+        }
+
+
+def show_query_persistence_status(status: dict[str, object]) -> None:
+    """Mostra o status da persistencia sem competir com a analise climatica."""
+    if status.get("saved"):
+        st.caption(f"✓ {status['message']}")
+    elif status.get("enabled"):
+        st.caption(str(status["message"]))
+
+
 def build_deploy_artifact_guidance(
     settings: Settings,
     report_dir: str | Path = PROJECT_ROOT / "data/reports",
@@ -552,6 +674,13 @@ def fetch_openweather_weather_data(
         weather_data["city"] = str(weather_data.get("city", city))
         weather_data["country"] = country
         weather_data["data_source"] = "OpenWeather"
+        persistence_status = persist_query_snapshot(
+            settings,
+            payload,
+            city,
+            country,
+        )
+        show_query_persistence_status(persistence_status)
         return weather_data
     except requests.HTTPError as error:
         status_code = (

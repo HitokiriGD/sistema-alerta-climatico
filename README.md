@@ -103,21 +103,26 @@ O projeto separa as fontes por finalidade:
 ## Base Propria OpenWeather em Postgres
 
 A partir desta etapa, o projeto tambem possui uma base operacional propria em
-Postgres para armazenar snapshots coletados da OpenWeather ao longo do tempo.
-Essa base fica separada do INMET historico:
+Supabase/Postgres para armazenar snapshots das consultas reais feitas pelo
+usuario no dashboard. Essa base fica separada do INMET historico:
 
 - `INMET DuckDB`: base historica oficial processada, usada para comparacao
   historica e futuro treinamento inicial.
 - `OpenWeather Postgres`: base propria operacional do sistema, preenchida por
-  coletas periodicas realizadas pelo projeto.
+  consultas OpenWeather realizadas no dashboard.
 
-A coleta padrao usa as 27 capitais brasileiras. Essa escolha mantem o escopo
-controlado, demonstravel no TCC e compativel com o limite do Supabase Free. A
-lista pode ser expandida futuramente por meio de `OPENWEATHER_COLLECTION_CITIES`.
+Depois que a OpenWeather retorna dados atuais com sucesso, o dashboard tenta
+inserir um snapshot em `weather_observations` quando `DATABASE_URL` esta
+configurada. A opcao `OPENWEATHER_STORE_RAW_PAYLOAD` define se a resposta bruta
+tambem sera armazenada. A entrada manual do dashboard nao e persistida.
 
-O Supabase Free possui limite aproximado de 500 MB por projeto. Como o Supabase
-nao apaga registros antigos automaticamente, o sistema executa retencao apos as
-coletas:
+Se `DATABASE_URL` estiver ausente ou o Supabase/Postgres estiver indisponivel,
+a consulta, classificacao por regras, predicao ML e comparacao historica
+continuam funcionando. A falha de persistencia e tratada como informacao
+secundaria e nunca exibe a URL de conexao.
+
+O script de coleta manual continua disponivel para manutencao ou demonstracao.
+Quando executado, ele aplica a retencao configurada:
 
 - remove observacoes com `collected_at` mais antigo que
   `OPENWEATHER_RETENTION_DAYS`;
@@ -161,24 +166,19 @@ O resumo no terminal mostra apenas informacoes seguras: cidades processadas,
 registros inseridos, falhas, limpeza de retencao e registros restantes. A URL
 do banco e a chave da API nao sao impressas.
 
-Para automatizar no GitHub Actions, configure os secrets do repositorio:
+Para executar a coleta manual pelo GitHub Actions, configure os secrets do
+repositorio:
 
 - `OPENWEATHER_API_KEY`
 - `DATABASE_URL`
 
-O workflow `.github/workflows/collect-openweather.yml` executa a coleta manual
-por `workflow_dispatch` e tambem 4 vezes ao dia pelo cron:
-
-```text
-0 0,6,12,18 * * *
-```
-
-O cron do GitHub Actions usa UTC. Ajuste a interpretacao dos horarios de acordo
-com o fuso desejado para a apresentacao.
+O workflow `.github/workflows/collect-openweather.yml` mantem apenas
+`workflow_dispatch`. A agenda por cron foi removida, portanto nenhuma coleta
+recorrente e iniciada automaticamente pelo GitHub Actions.
 
 Essa base propria ainda nao e usada como fonte principal de treino de Machine
-Learning, pois comecara pequena. Ela prepara o sistema para coleta continua,
-armazenamento externo e validacao futura.
+Learning, pois comecara pequena. Ela prepara o sistema para armazenamento
+incremental de consultas reais e validacao futura.
 
 O INMET nao e usado como fonte de tempo real neste projeto, pois o portal
 publico depende de validacoes como `seed`, `gcap` e reCAPTCHA. Em vez disso,
@@ -375,8 +375,8 @@ futura modelagem com aprendizado de maquina.
 
 A etapa de dataset rotulado cria uma base supervisionada inicial a partir do
 INMET DuckDB, que e a base historica oficial processada do projeto. A base
-OpenWeather em Postgres continua separada: ela demonstra coleta continua e
-armazenamento proprio, mas ainda nao e usada como fonte principal de treino.
+OpenWeather em Postgres continua separada: ela demonstra persistencia dos
+snapshots consultados, mas ainda nao e usada como fonte principal de treino.
 
 Os rotulos iniciais sao gerados pelo `RiskClassifier` atual. Isso significa que
 o dataset recebe `risk_level` e `event_type` a partir das mesmas regras tecnicas
@@ -649,8 +649,9 @@ ML_EVALUATION_REPORT_SHA256 = "sha256_do_report_json"
 ```
 
 `GITHUB_TOKEN` so e necessario se o repositorio ou alguma release forem
-privados. `DATABASE_URL` so e necessario para a coleta continua em
-Supabase/Postgres; a consulta do dashboard nao deve imprimir esse valor.
+privados. `DATABASE_URL` habilita a persistencia das consultas do dashboard e a
+coleta manual em Supabase/Postgres; o dashboard e os scripts nunca devem
+imprimir esse valor.
 
 No Streamlit Cloud, o arquivo `data/processed/inmet_historical.duckdb` nao fica
 versionado no repositorio. Quando a analise historica for usada pela primeira
