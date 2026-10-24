@@ -18,7 +18,7 @@ METHODOLOGICAL_NOTE = (
     "não validação contra eventos reais oficiais."
 )
 MODEL_NOT_FOUND_MESSAGE = (
-    "Modelo ML ainda nao encontrado localmente. Gere o dataset com "
+    "Modelo de ML ainda não encontrado localmente. Gere o conjunto de dados com "
     "python scripts/build_ml_dataset.py e treine o modelo com "
     "python scripts/train_ml_models.py. Em uma etapa futura, esses artefatos "
     "tambem podem ser publicados em uma GitHub Release."
@@ -47,7 +47,7 @@ def load_model_bundle(
         model = loader(model_path)
     except (OSError, ValueError, json.JSONDecodeError) as error:
         return _unavailable_result(
-            f"Nao foi possivel carregar o modelo ML local: {error}"
+            f"Não foi possível carregar o modelo de ML local: {error}"
         )
 
     return {
@@ -96,8 +96,8 @@ def build_prediction_features(
             "missing_features": missing_features,
             "observations": observations,
             "error_message": (
-                "Nao foi possivel montar todas as features obrigatorias para "
-                "a previsao ML: "
+                "Não foi possível montar todas as variáveis obrigatórias para "
+                "a previsão de ML: "
                 + ", ".join(missing_features)
                 + "."
             ),
@@ -152,7 +152,9 @@ def predict_risk_level(
     try:
         prediction = bundle["model"].predict(feature_result["features"])[0]
     except (AttributeError, ValueError, TypeError) as error:
-        base_result["error_message"] = f"Nao foi possivel executar a previsao ML: {error}"
+        base_result["error_message"] = (
+            f"Não foi possível executar a previsão de ML: {error}"
+        )
         return base_result
 
     base_result["prediction"] = str(prediction)

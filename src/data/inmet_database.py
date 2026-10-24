@@ -56,7 +56,7 @@ def ensure_inmet_database_available(
             "available": True,
             "downloaded": False,
             "path": str(database_path),
-            "message": "Base historica INMET ja disponivel localmente.",
+            "message": "Base histórica do INMET já disponível localmente.",
             "error_message": "",
         }
 
@@ -101,7 +101,7 @@ def ensure_inmet_database_available(
         "path": str(database_path),
         "message": "",
         "error_message": (
-            "Download finalizado, mas o arquivo DuckDB nao foi encontrado no "
+            "Download finalizado, mas o arquivo DuckDB não foi encontrado no "
             "caminho configurado."
         ),
     }

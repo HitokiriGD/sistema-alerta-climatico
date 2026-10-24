@@ -27,6 +27,15 @@ from src.config.settings import Settings
 from src.config.settings import load_settings
 from src.config.settings import sanitize_sensitive_text
 from src.data import weather_repository
+from src.data.brazilian_municipalities import BRAZIL_COUNTRY_CODE
+from src.data.brazilian_municipalities import BrazilianMunicipality
+from src.data.brazilian_municipalities import FALLBACK_CAPITALS
+from src.data.brazilian_municipalities import MunicipalityCatalogError
+from src.data.brazilian_municipalities import MunicipalityLocationError
+from src.data.brazilian_municipalities import fetch_ibge_municipalities
+from src.data.brazilian_municipalities import fetch_ibge_municipality_coordinates
+from src.data.brazilian_municipalities import find_municipality_by_name
+from src.data.brazilian_municipalities import format_municipality_option
 from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
 from src.data.inmet_client import normalize_city_name
@@ -58,18 +67,24 @@ STANDARD_WEATHER_FIELDS = [
     "pressure_station_hpa",
 ]
 CURRENT_WEATHER_DISPLAY = {
-    "temperature": ("Temperatura", "C"),
-    "feels_like": ("Sensacao termica", "C"),
+    "temperature": ("Temperatura", "°C"),
+    "feels_like": ("Sensação térmica", "°C"),
     "humidity": ("Umidade", "%"),
-    "precipitation": ("Precipitacao", "mm"),
+    "precipitation": ("Precipitação", "mm"),
     "wind_speed": ("Vento", "km/h"),
-    "pressure_sea_level_hpa": ("Pressao nivel do mar", "hPa"),
-    "pressure_station_hpa": ("Pressao nivel da estacao", "hPa"),
+    "pressure_sea_level_hpa": (
+        "Pressão atmosférica ao nível do mar",
+        "hPa",
+    ),
+    "pressure_station_hpa": (
+        "Pressão atmosférica ao nível da estação",
+        "hPa",
+    ),
 }
 VARIABLE_DISPLAY = {
     "temperature": {
         "label": "Temperatura",
-        "unit": "C",
+        "unit": "°C",
         "percentile": "P95",
     },
     "humidity": {
@@ -78,7 +93,7 @@ VARIABLE_DISPLAY = {
         "percentile": "P10",
     },
     "precipitation": {
-        "label": "Precipitacao",
+        "label": "Precipitação",
         "unit": "mm",
         "percentile": "P95",
     },
@@ -88,7 +103,7 @@ VARIABLE_DISPLAY = {
         "percentile": "P95",
     },
     "pressure": {
-        "label": "Pressao",
+        "label": "Pressão",
         "unit": "hPa",
         "percentile": "P5 a P95",
     },
@@ -96,10 +111,10 @@ VARIABLE_DISPLAY = {
 ANOMALY_LABELS = {
     "HIGH_TEMPERATURE": "Temperatura alta",
     "LOW_HUMIDITY": "Umidade baixa",
-    "HIGH_PRECIPITATION": "Precipitacao alta",
+    "HIGH_PRECIPITATION": "Precipitação alta",
     "HIGH_WIND": "Vento forte",
-    "PRESSURE_ANOMALY": "Pressao atmosferica",
-    "POTENTIAL_FIRE_RISK": "Risco potencial de incendio",
+    "PRESSURE_ANOMALY": "Pressão atmosférica",
+    "POTENTIAL_FIRE_RISK": "Risco potencial de incêndio",
 }
 EVENT_LABELS = {
     "sem_risco_relevante": "sem risco relevante",
@@ -108,7 +123,7 @@ EVENT_LABELS = {
     "frio_intenso": "frio intenso",
     "chuva_intensa": "chuva intensa",
     "vento_forte": "vento forte",
-    "risco_incendio": "risco de incendio",
+    "risco_incendio": "risco de incêndio",
 }
 PRIMARY_EVENT_LABELS = {
     "sem_risco_relevante": "Nenhum evento relevante destacado",
@@ -167,13 +182,13 @@ FACTOR_SEVERITY_ORDER = {
     "critico": 3,
 }
 ANOMALY_SUMMARY_TEXT = {
-    "HIGH_TEMPERATURE": "a temperatura esta acima do padrao esperado",
-    "LOW_HUMIDITY": "a umidade esta abaixo do padrao esperado",
-    "HIGH_PRECIPITATION": "a precipitacao esta acima do padrao esperado",
-    "HIGH_WIND": "o vento esta acima do padrao esperado",
-    "PRESSURE_ANOMALY": "a pressao esta fora da faixa historica observada",
+    "HIGH_TEMPERATURE": "a temperatura está acima do padrão esperado",
+    "LOW_HUMIDITY": "a umidade está abaixo do padrão esperado",
+    "HIGH_PRECIPITATION": "a precipitação está acima do padrão esperado",
+    "HIGH_WIND": "o vento está acima do padrão esperado",
+    "PRESSURE_ANOMALY": "a pressão está fora da faixa histórica observada",
     "POTENTIAL_FIRE_RISK": (
-        "a combinacao de calor, baixa umidade e vento favorece risco de incendio"
+        "a combinação de calor, baixa umidade e vento favorece risco de incêndio"
     ),
 }
 DEFAULT_HISTORICAL_START_YEAR = 2020
@@ -191,15 +206,15 @@ ML_EVALUATION_COMMAND = (
 )
 MODEL_SELECTION_TAB_LABEL = "Como o modelo principal foi escolhido"
 MODEL_SELECTION_EXPLANATION = (
-    "Esta tabela nao muda a cada consulta. Ela mostra o desempenho dos "
-    "algoritmos no conjunto de avaliacao usado no treinamento. O dashboard "
-    "utiliza o melhor modelo salvo localmente para classificar a cidade "
-    "consultada."
+    "Esta tabela não muda a cada consulta. Ela mostra o desempenho dos "
+    "algoritmos no conjunto de avaliação usado no treinamento. O dashboard "
+    "utiliza o melhor modelo salvo localmente para classificar o município "
+    "consultado."
 )
 MODEL_SELECTION_METRIC_NOTE = (
-    "A metrica principal de selecao e f1_macro, nao accuracy, porque o "
+    "A métrica principal de seleção é f1_macro, não accuracy, porque o "
     "problema possui classes desbalanceadas e accuracy pode favorecer modelos "
-    "que acertam apenas a classe majoritaria."
+    "que acertam apenas a classe majoritária."
 )
 ML_DATASET_COMMAND = (
     "python scripts/build_ml_dataset.py --start-year 2020 --end-year 2026 "
@@ -221,9 +236,9 @@ DASHBOARD_SUBTITLE = (
     "climático."
 )
 METHODOLOGICAL_NOTE_SHORT = (
-    "O modelo foi treinado com rotulos derivados de regras tecnicas. "
-    "A previsao representa uma classificacao supervisionada aprendida, "
-    "nao validacao contra eventos reais oficiais."
+    "O modelo foi treinado com rótulos derivados de regras técnicas. "
+    "A previsão representa uma classificação supervisionada aprendida, "
+    "não uma validação contra eventos reais oficiais."
 )
 RISK_BADGE_STYLES = {
     "baixo": {
@@ -253,13 +268,13 @@ RISK_BADGE_STYLES = {
     },
 }
 RISK_RECOMMENDATIONS = {
-    "baixo": "Monitorar normalmente e manter acompanhamento das atualizacoes.",
-    "moderado": "Manter atencao e acompanhar atualizacoes meteorologicas.",
+    "baixo": "Monitorar normalmente e acompanhar as atualizações.",
+    "moderado": "Manter atenção e acompanhar as atualizações meteorológicas.",
     "alto": (
-        "Autoridades e responsaveis devem acompanhar com atencao reforcada."
+        "Autoridades e responsáveis devem acompanhar com atenção reforçada."
     ),
     "critico": (
-        "Autoridades e responsaveis devem avaliar medidas preventivas e "
+        "Autoridades e responsáveis devem avaliar medidas preventivas e "
         "alertas locais."
     ),
 }
@@ -322,8 +337,8 @@ def _build_dashboard_query_observation(
 
     return {
         "source": "OpenWeather",
-        "city": str(weather_data.get("city", requested_city)),
-        "country": country.strip().upper() or "BR",
+        "city": requested_city,
+        "country": BRAZIL_COUNTRY_CODE,
         "latitude": weather_data.get("latitude"),
         "longitude": weather_data.get("longitude"),
         "weather_datetime": weather_datetime,
@@ -423,25 +438,26 @@ def build_deploy_artifact_guidance(
 
     if not database_exists(settings.inmet_database_path):
         guidance.append(
-            "Base historica INMET DuckDB nao encontrada. O dashboard tentara "
+            "Base histórica INMET DuckDB não encontrada. O dashboard tentará "
             "baixar automaticamente da GitHub Release no primeiro uso da "
-            "analise historica. Para preparar localmente antes de abrir o app, "
+            "análise histórica. Para preparar localmente antes de abrir o app, "
             f"execute {INMET_DATABASE_DOWNLOAD_COMMAND}."
         )
 
     if not model_files_available(model_path, metadata_path):
         guidance.append(
-            "Modelo ML local nao encontrado. O dashboard tentara baixar os "
+            "Modelo de ML local não encontrado. O dashboard tentará baixar os "
             "artefatos da GitHub Release configurada no primeiro uso. Como "
-            "alternativa local reprodutivel, gere o dataset e treine o modelo "
+            "alternativa local reprodutível, gere o conjunto de dados e treine o "
+            "modelo "
             f"com {ML_DATASET_COMMAND} e {ML_TRAINING_COMMAND}."
         )
 
     report_status = load_ml_evaluation_report(report_dir)
     if not report_status["available"]:
         guidance.append(
-            "Relatorio de avaliacao ML nao encontrado. O dashboard tentara "
-            "baixar o relatorio da mesma release dos artefatos ML. Para gerar "
+            "Relatório de avaliação de ML não encontrado. O dashboard tentará "
+            "baixar o relatório da mesma release dos artefatos de ML. Para gerar "
             f"localmente, execute {ML_EVALUATION_COMMAND}."
         )
 
@@ -458,6 +474,18 @@ def ensure_inmet_database_available_for_app(settings: Settings) -> dict[str, obj
 def ensure_ml_artifacts_available_for_app(settings: Settings) -> dict[str, object]:
     """Garante artefatos ML uma vez por sessao do Streamlit."""
     return ensure_ml_artifacts_available(settings)
+
+
+@st.cache_data(ttl=86_400, show_spinner=False)
+def load_municipality_catalog_for_app() -> tuple[BrazilianMunicipality, ...]:
+    """Mantém em cache o catálogo oficial de municípios do IBGE."""
+    return fetch_ibge_municipalities()
+
+
+@st.cache_data(ttl=604_800, show_spinner=False)
+def load_municipality_coordinates_for_app(ibge_code: int) -> tuple[float, float]:
+    """Mantém em cache a coordenada validada pela malha municipal do IBGE."""
+    return fetch_ibge_municipality_coordinates(ibge_code)
 
 
 def prepare_ml_artifacts_for_dashboard(settings: Settings) -> dict[str, object]:
@@ -478,8 +506,8 @@ def prepare_ml_artifacts_for_dashboard(settings: Settings) -> dict[str, object]:
         return status
 
     st.warning(
-        "Nao foi possivel baixar os artefatos de Machine Learning. A consulta "
-        "continuara com dados atuais, analise historica e regras tecnicas."
+        "Não foi possível baixar os artefatos de Machine Learning. A consulta "
+        "continuará com dados atuais, análise histórica e regras técnicas."
     )
     error_message = str(status.get("error_message") or "").strip()
     if error_message:
@@ -493,17 +521,17 @@ def prepare_inmet_database_for_historical_flow(settings: Settings) -> dict[str, 
     if database_was_available:
         return ensure_inmet_database_available_for_app(settings)
 
-    st.info("Preparando base historica INMET...")
-    with st.spinner("Preparando base historica INMET..."):
+    st.info("Preparando a base histórica do INMET...")
+    with st.spinner("Preparando a base histórica do INMET..."):
         status = ensure_inmet_database_available_for_app(settings)
 
     if status.get("available"):
-        st.success("Base historica INMET carregada com sucesso.")
+        st.success("Base histórica do INMET carregada com sucesso.")
         return status
 
     st.warning(
-        "Nao foi possivel baixar a base historica. A consulta continuara "
-        "apenas com dados atuais e regras tecnicas."
+        "Não foi possível baixar a base histórica. A consulta continuará "
+        "apenas com dados atuais e regras técnicas."
     )
     error_message = str(status.get("error_message") or "").strip()
     if error_message:
@@ -520,8 +548,8 @@ def show_deploy_artifact_guidance(settings: Settings) -> None:
     with st.container(border=True):
         st.markdown("#### Artefatos opcionais da demo")
         st.write(
-            "O dashboard abre mesmo sem DuckDB, modelo ou relatorios locais. "
-            "Para ativar a experiencia completa:"
+            "O dashboard abre mesmo sem DuckDB, modelo ou relatórios locais. "
+            "Para ativar a experiência completa:"
         )
         for message in guidance:
             st.write(f"- {message}")
@@ -529,8 +557,8 @@ def show_deploy_artifact_guidance(settings: Settings) -> None:
 
 def build_manual_weather_data() -> dict[str, object]:
     """Coleta dados meteorologicos informados manualmente no dashboard."""
-    temperature = st.number_input("Temperatura (C)", value=28.0, step=0.5)
-    feels_like = st.number_input("Sensacao termica (C)", value=29.0, step=0.5)
+    temperature = st.number_input("Temperatura (°C)", value=28.0, step=0.5)
+    feels_like = st.number_input("Sensação térmica (°C)", value=29.0, step=0.5)
     humidity = st.number_input(
         "Umidade relativa (%)",
         value=65.0,
@@ -538,7 +566,7 @@ def build_manual_weather_data() -> dict[str, object]:
         max_value=100.0,
     )
     precipitation = st.number_input(
-        "Precipitacao (mm/h)",
+        "Precipitação (mm/h)",
         value=0.0,
         min_value=0.0,
     )
@@ -548,7 +576,7 @@ def build_manual_weather_data() -> dict[str, object]:
         min_value=0.0,
     )
     pressure = st.number_input(
-        "Pressao atmosferica (hPa)",
+        "Pressão atmosférica (hPa)",
         value=1013.0,
         min_value=0.0,
     )
@@ -570,32 +598,59 @@ def build_query_form(
     settings: Settings,
     compact: bool = False,
 ) -> tuple[dict[str, object], bool]:
-    """Monta o formulario principal de consulta do dashboard."""
+    """Monta o formulário principal de consulta do dashboard."""
+    catalog_is_fallback = False
+    try:
+        municipalities = load_municipality_catalog_for_app()
+    except MunicipalityCatalogError:
+        municipalities = FALLBACK_CAPITALS
+        catalog_is_fallback = True
+
+    default_municipality = find_municipality_by_name(
+        municipalities,
+        settings.default_city,
+    )
+    default_index = (
+        municipalities.index(default_municipality)
+        if default_municipality is not None
+        else 0
+    )
+
     with st.container(border=True):
         st.subheader("Nova consulta" if compact else "Consulta")
         if not compact:
             st.caption(
-                "Informe a cidade e o periodo historico antes de buscar os dados."
+                "Selecione o município e o período histórico antes de buscar "
+                "os dados."
+            )
+        if catalog_is_fallback:
+            st.warning(
+                "O catálogo do IBGE está indisponível no momento. A seleção "
+                "temporária contém apenas capitais e permite usar a entrada "
+                "manual; a consulta à OpenWeather exige a validação do IBGE."
             )
         with st.form("weather_query_form"):
-            col_city, col_country = st.columns([3, 1])
-            city = col_city.text_input("Cidade", value=settings.default_city)
-            country = col_country.text_input(
-                "Pais",
-                value=settings.default_country,
-                max_chars=2,
+            municipality = st.selectbox(
+                "Município/UF",
+                municipalities,
+                index=default_index,
+                format_func=format_municipality_option,
+                help=(
+                    "Digite parte do município com ou sem acentos e selecione "
+                    "uma opção do catálogo do IBGE."
+                ),
             )
 
             col_start, col_end, col_source = st.columns([1, 1, 1.4])
             start_year = col_start.number_input(
-                "Ano inicial do historico",
+                "Ano inicial do histórico",
                 min_value=HISTORICAL_MIN_YEAR,
                 max_value=HISTORICAL_MAX_YEAR,
                 value=DEFAULT_HISTORICAL_START_YEAR,
                 step=1,
             )
             end_year = col_end.number_input(
-                "Ano final do historico",
+                "Ano final do histórico",
                 min_value=HISTORICAL_MIN_YEAR,
                 max_value=HISTORICAL_MAX_YEAR,
                 value=DEFAULT_HISTORICAL_END_YEAR,
@@ -608,14 +663,18 @@ def build_query_form(
             )
 
             submitted = st.form_submit_button(
-                "Buscar dados e comparar com historico",
+                "Buscar dados e comparar com o histórico",
                 type="primary",
             )
 
     return (
         {
-            "city": city,
-            "country": country,
+            "city": municipality.label,
+            "municipality_name": municipality.name,
+            "state_code": municipality.state_code,
+            "state_name": municipality.state_name,
+            "ibge_code": municipality.ibge_code,
+            "country": BRAZIL_COUNTRY_CODE,
             "start_year": int(start_year),
             "end_year": int(end_year),
             "data_source": data_source,
@@ -629,13 +688,13 @@ def validate_historical_period(start_year: int, end_year: int) -> tuple[bool, st
     if start_year > end_year:
         return (
             False,
-            "O ano inicial do historico deve ser menor ou igual ao ano final.",
+            "O ano inicial do histórico deve ser menor ou igual ao ano final.",
         )
     if start_year < HISTORICAL_MIN_YEAR or end_year > HISTORICAL_MAX_YEAR:
         return (
             False,
             (
-                "O periodo historico deve ficar entre "
+                "O período histórico deve ficar entre "
                 f"{HISTORICAL_MIN_YEAR} e {HISTORICAL_MAX_YEAR}."
             ),
         )
@@ -649,39 +708,59 @@ def format_requested_period(start_year: int, end_year: int) -> str:
 
 def fetch_openweather_weather_data(
     settings: Settings,
-    city: str,
-    country: str,
+    municipality_name: str,
+    state_code: str,
+    ibge_code: int,
 ) -> dict[str, object] | None:
-    """Coleta dados meteorologicos atuais usando a OpenWeather."""
-    city = city.strip()
-    country = country.strip().upper() or settings.default_country
+    """Coleta dados atuais por coordenadas municipais validadas no IBGE."""
+    municipality_name = municipality_name.strip()
+    state_code = state_code.strip().upper()
+    municipality_label = f"{municipality_name}/{state_code}"
+    try:
+        validated_ibge_code = int(ibge_code)
+    except (TypeError, ValueError):
+        validated_ibge_code = 0
 
     if not settings.openweather_api_key:
         st.error(
             "Configure OPENWEATHER_API_KEY no arquivo .env para usar a "
-            "OpenWeather. A entrada manual continua disponivel."
+            "OpenWeather. A entrada manual continua disponível."
         )
         return None
 
-    if not city:
-        st.error("Informe uma cidade para buscar os dados meteorologicos atuais.")
+    if not municipality_name or len(state_code) != 2 or validated_ibge_code <= 0:
+        st.error(
+            "Não foi possível validar com segurança o município selecionado. "
+            "Atualize o catálogo do IBGE e tente novamente."
+        )
         return None
 
     try:
-        client = OpenWeatherClient(replace(settings, default_country=country))
-        payload = client.fetch_current_weather(city)
+        latitude, longitude = load_municipality_coordinates_for_app(
+            validated_ibge_code
+        )
+        client = OpenWeatherClient(
+            replace(settings, default_country=BRAZIL_COUNTRY_CODE)
+        )
+        payload = client.fetch_current_weather_by_coordinates(latitude, longitude)
+        _validate_openweather_location(payload, latitude, longitude)
         weather_data = normalize_weather_payload(payload)
-        weather_data["city"] = str(weather_data.get("city", city))
-        weather_data["country"] = country
+        weather_data["city"] = municipality_label
+        weather_data["municipality_name"] = municipality_name
+        weather_data["state_code"] = state_code
+        weather_data["ibge_code"] = validated_ibge_code
+        weather_data["country"] = BRAZIL_COUNTRY_CODE
         weather_data["data_source"] = "OpenWeather"
         persistence_status = persist_query_snapshot(
             settings,
             payload,
-            city,
-            country,
+            municipality_label,
+            BRAZIL_COUNTRY_CODE,
         )
         show_query_persistence_status(persistence_status)
         return weather_data
+    except MunicipalityLocationError as error:
+        st.error(str(error))
     except requests.HTTPError as error:
         status_code = (
             error.response.status_code
@@ -690,11 +769,11 @@ def fetch_openweather_weather_data(
         )
         st.error(
             "A OpenWeather retornou um erro "
-            f"({status_code}). Verifique a cidade informada e a chave da API."
+            f"({status_code}). Verifique a chave da API e tente novamente."
         )
     except requests.RequestException:
         st.error(
-            "Nao foi possivel conectar a OpenWeather. Verifique sua conexao "
+            "Não foi possível conectar à OpenWeather. Verifique sua conexão "
             "e tente novamente."
         )
     except ValueError as error:
@@ -703,22 +782,55 @@ def fetch_openweather_weather_data(
     return None
 
 
+def _validate_openweather_location(
+    payload: dict[str, object],
+    expected_latitude: float,
+    expected_longitude: float,
+) -> None:
+    """Impede o uso de resposta meteorológica associada a outro local."""
+    system_data = payload.get("sys")
+    country = system_data.get("country") if isinstance(system_data, dict) else None
+    coordinates = payload.get("coord")
+    if country != BRAZIL_COUNTRY_CODE or not isinstance(coordinates, dict):
+        raise MunicipalityLocationError(
+            "A OpenWeather não confirmou a localização brasileira selecionada."
+        )
+    try:
+        actual_latitude = float(coordinates["lat"])
+        actual_longitude = float(coordinates["lon"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise MunicipalityLocationError(
+            "A OpenWeather não retornou coordenadas válidas para a consulta."
+        ) from error
+    distance_km = calculate_distance_km(
+        expected_latitude,
+        expected_longitude,
+        actual_latitude,
+        actual_longitude,
+    )
+    if distance_km > 5:
+        raise MunicipalityLocationError(
+            "A OpenWeather respondeu com outra localização; a consulta foi "
+            "interrompida por segurança."
+        )
+
+
 def show_weather_data(weather_data: dict[str, object]) -> None:
     """Exibe os campos meteorologicos padronizados no dashboard."""
     city = str(weather_data.get("city", "-"))
     source = str(weather_data.get("data_source", "-"))
     col_city, col_source = st.columns(2)
-    col_city.metric("Cidade consultada", city)
+    col_city.metric("Município consultado", city)
     col_source.metric("Fonte atual", source)
 
     metric_columns = st.columns(6)
     metric_columns[0].metric(
         "Temperatura",
-        _format_value(weather_data.get("temperature"), "C"),
+        _format_value(weather_data.get("temperature"), "°C"),
     )
     metric_columns[1].metric(
-        "Sensacao termica",
-        _format_value(weather_data.get("feels_like"), "C"),
+        "Sensação térmica",
+        _format_value(weather_data.get("feels_like"), "°C"),
     )
     metric_columns[2].metric(
         "Umidade",
@@ -736,46 +848,46 @@ def show_weather_data(weather_data: dict[str, object]) -> None:
         "pressure_station_hpa",
         weather_data.get("pressure_sea_level_hpa", weather_data.get("pressure")),
     )
-    metric_columns[5].metric("Pressao", _format_value(pressure_value, "hPa"))
+    metric_columns[5].metric("Pressão", _format_value(pressure_value, "hPa"))
     st.caption(build_current_pressure_text(weather_data))
 
-    with st.expander("Variaveis atuais padronizadas"):
+    with st.expander("Variáveis meteorológicas atuais"):
         st.dataframe(
             pd.DataFrame(build_current_weather_rows(weather_data)),
             width="stretch",
             hide_index=True,
         )
-    with st.expander("Variaveis brutas e campos tecnicos"):
+    with st.expander("Variáveis brutas e campos técnicos"):
         st.json(weather_data)
 
 
 def show_weather_risk(risk: WeatherRisk) -> None:
     """Exibe o resultado explicavel do classificador por regras."""
     col_level, col_event = st.columns(2)
-    col_level.metric("Nivel de risco", risk.risk_level.upper())
+    col_level.metric("Nível de risco", risk.risk_level.upper())
     col_event.metric("Evento principal", format_event_type(risk.event_type))
     _show_risk_reason(risk)
     st.caption(
-        "As regras justificam tecnicamente a classificacao e tambem geraram "
-        "os rotulos usados no treinamento supervisionado."
+        "As regras justificam tecnicamente a classificação e também geraram "
+        "os rótulos usados no treinamento supervisionado."
     )
 
-    st.write("Recomendacoes gerais")
+    st.write("Recomendações gerais")
     for recommendation in risk.recommendations:
         st.write(f"- {recommendation}")
 
-    st.write("Recomendacoes preventivas aprimoradas")
-    st.write("- Usuario/populacao: " + build_public_recommendation(
+    st.write("Recomendações preventivas aprimoradas")
+    st.write("- Usuário/população: " + build_public_recommendation(
         risk.risk_level,
         risk.event_type,
     ))
-    st.write("- Autoridades/responsaveis: " + build_authority_recommendation(
+    st.write("- Autoridades/responsáveis: " + build_authority_recommendation(
         risk.risk_level,
         risk.event_type,
     ))
     st.caption(
-        "Texto preventivo de apoio a decisao, baseado em dados disponiveis e "
-        "sem substituir comunicados de orgaos competentes."
+        "Texto preventivo de apoio à decisão, baseado nos dados disponíveis e "
+        "sem substituir comunicados de órgãos competentes."
     )
 
     with st.expander("Regras acionadas"):
@@ -785,7 +897,7 @@ def show_weather_risk(risk: WeatherRisk) -> None:
         else:
             st.write("Nenhuma regra relevante foi acionada.")
 
-    with st.expander("Variaveis usadas no alerta por regras"):
+    with st.expander("Variáveis usadas no alerta por regras"):
         st.dataframe(pd.DataFrame([risk.variables]), width="stretch", hide_index=True)
 
 
@@ -810,7 +922,7 @@ def get_ml_prediction_for_dashboard(
             "missing_features": [],
             "observations": [],
             "methodological_note": METHODOLOGICAL_NOTE,
-            "error_message": "Dados meteorologicos atuais ausentes para previsao ML.",
+            "error_message": "Dados meteorológicos atuais ausentes para a previsão de ML.",
         }
 
     bundle = model_bundle or load_ml_model_bundle_for_app()
@@ -838,7 +950,7 @@ def load_ml_evaluation_report(report_dir: str | Path = "data/reports") -> dict[s
                 "report": None,
                 "report_path": str(report_path),
                 "source": "",
-                "error_message": f"Nao foi possivel ler o relatorio ML: {error}",
+                "error_message": f"Não foi possível ler o relatório de ML: {error}",
             }
         return {
             "available": True,
@@ -854,8 +966,8 @@ def load_ml_evaluation_report(report_dir: str | Path = "data/reports") -> dict[s
         "report_path": "",
         "source": "",
         "error_message": (
-            "Relatorio de avaliacao ML nao encontrado. Depois de gerar o "
-            "dataset e treinar o modelo, gere a avaliacao com "
+            "Relatório de avaliação de ML não encontrado. Depois de gerar o "
+            "conjunto de dados e treinar o modelo, gere a avaliação com "
             f"{ML_EVALUATION_COMMAND}."
         ),
     }
@@ -969,22 +1081,22 @@ def build_intelligent_diagnosis_summary(
     if ml_risk:
         summary = (
             f"O modelo supervisionado indica risco {ml_risk}. "
-            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+            f"As regras técnicas apontam risco {rule_risk or 'não calculado'}."
         )
     elif (ml_prediction or {}).get("error_message"):
         summary = (
-            "A camada de Machine Learning ainda nao esta disponivel localmente. "
-            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+            "A camada de Machine Learning ainda não está disponível localmente. "
+            f"As regras técnicas apontam risco {rule_risk or 'não calculado'}."
         )
     else:
         summary = (
-            f"As regras tecnicas apontam risco {rule_risk or 'nao calculado'}."
+            f"As regras técnicas apontam risco {rule_risk or 'não calculado'}."
         )
 
     if anomaly:
-        summary += f" Principal anomalia historica: {anomaly}."
+        summary += f" Principal anomalia histórica: {anomaly}."
     else:
-        summary += " Nenhuma anomalia historica principal foi destacada."
+        summary += " Nenhuma anomalia histórica principal foi destacada."
 
     return {
         "ml_risk": ml_risk or "indisponivel",
@@ -1011,23 +1123,23 @@ def build_divergence_message(
     rule_text = str(rule_risk or "").strip().lower()
     if not ml_text or ml_text == "indisponivel":
         return (
-            "A camada de Machine Learning nao esta disponivel para esta consulta. "
-            "O resultado atual usa a classificacao tecnica por regras."
+            "A camada de Machine Learning não está disponível para esta consulta. "
+            "O resultado atual usa a classificação técnica por regras."
         )
     if not rule_text or rule_text == "indisponivel":
         return (
-            f"O modelo supervisionado indicou {ml_text}, mas as regras tecnicas "
-            "nao foram calculadas para esta consulta."
+            f"O modelo supervisionado indicou {ml_text}, mas as regras técnicas "
+            "não foram calculadas para esta consulta."
         )
     if ml_text == rule_text:
         return (
-            "O modelo supervisionado e as regras tecnicas chegaram ao mesmo "
-            "nivel de risco."
+            "O modelo supervisionado e as regras técnicas chegaram ao mesmo "
+            "nível de risco."
         )
     return (
-        f"O modelo supervisionado indicou {ml_text}, enquanto as regras tecnicas "
+        f"O modelo supervisionado indicou {ml_text}, enquanto as regras técnicas "
         f"indicaram {rule_text}. Essa diferenca pode ocorrer porque o modelo "
-        "aprende combinacoes entre variaveis historicas rotuladas, enquanto as "
+        "aprende combinações entre variáveis históricas rotuladas, enquanto as "
         "regras aplicam limites diretos."
     )
 
@@ -1279,12 +1391,12 @@ def build_main_result_summary(
     result_label = (
         "Risco previsto pela IA"
         if ml_available
-        else "Classificacao tecnica por regras"
+        else "Classificação técnica por regras"
     )
     result_caption = (
         "Machine Learning supervisionado com modelo salvo localmente"
         if ml_available
-        else "Resultado baseado em regras tecnicas e historico quando disponivel"
+        else "Resultado baseado em regras técnicas e histórico, quando disponível"
     )
     event_type = risk.event_type if risk is not None else "sem_risco_relevante"
     anomalies = (analysis_result or {}).get("anomalies", [])
@@ -1319,9 +1431,9 @@ def build_main_result_summary(
         "result_label": result_label,
         "result_caption": result_caption,
         "ml_risk": ml_risk,
-        "model_name": str(prediction.get("model_name") or "Nao disponivel"),
+        "model_name": str(prediction.get("model_name") or "Não disponível"),
         "selection_metric": str(
-            prediction.get("selection_metric") or "Nao informada"
+            prediction.get("selection_metric") or "Não informada"
         ),
         "rule_risk": rule_risk or "indisponivel",
         "event_type": event_type,
@@ -1358,7 +1470,7 @@ def build_model_rule_comparison_sentence(
     ):
         return ""
     return (
-        f"O modelo indicou {ml_text}, enquanto as regras tecnicas indicaram "
+        f"O modelo indicou {ml_text}, enquanto as regras técnicas indicaram "
         f"{rule_text}."
     )
 
@@ -1371,13 +1483,13 @@ def build_short_result_explanation(summary: dict[str, object]) -> str:
     anomaly_count = int(summary.get("anomaly_count") or 0)
 
     if event_type == "sem_risco_relevante" or not event_guidance:
-        evidence = "a classificacao tecnica calculada com os dados atuais"
+        evidence = "a classificação técnica calculada com os dados atuais"
     else:
         evidence = event_guidance[0].lower() + event_guidance[1:]
 
     if anomaly_count and "sem anomalia" not in main_anomaly:
-        return f"A principal evidencia foi {evidence}, com anomalia historica relevante."
-    return f"A principal evidencia foi {evidence}."
+        return f"A principal evidência foi {evidence}, com anomalia histórica relevante."
+    return f"A principal evidência foi {evidence}."
 
 
 def build_main_diagnosis_text(summary: dict[str, object]) -> str:
@@ -1394,13 +1506,13 @@ def build_main_diagnosis_text(summary: dict[str, object]) -> str:
         sentences = [
             "O modelo supervisionado classificou a consulta como risco "
             f"{final_risk}, tendo {primary_event.lower()} como evento principal "
-            "e principal evidencia.",
+            "e a principal evidência.",
         ]
     else:
         sentences = [
-            "A consulta foi classificada pelas regras tecnicas como "
+            "A consulta foi classificada pelas regras técnicas como "
             f"risco {final_risk}, tendo {primary_event.lower()} como evento "
-            "principal e principal evidencia.",
+            "principal e a principal evidência.",
         ]
 
     factors = summary.get("associated_factors")
@@ -1415,8 +1527,8 @@ def build_main_diagnosis_text(summary: dict[str, object]) -> str:
         )
 
     sentences.append(
-        "Recomenda-se acompanhar atualizacoes meteorologicas e adotar medidas "
-        "preventivas proporcionais ao cenario."
+            "Recomenda-se acompanhar as atualizações meteorológicas e adotar "
+            "medidas preventivas proporcionais ao cenário."
     )
     return " ".join(sentences[:4])
 
@@ -1433,23 +1545,23 @@ def build_methodological_detail_text(
         METHODOLOGICAL_NOTE,
         str(summary.get("methodological_caution") or ""),
         (
-            "O risco principal representa o nivel agregado apresentado para a "
-            "consulta. O evento principal e o destaque tematico da classificacao "
-            "e vem do event_type calculado pelas regras tecnicas."
+        "O risco principal representa o nível agregado apresentado para a "
+        "consulta. O evento principal é o destaque temático da classificação "
+        "e vem do event_type calculado pelas regras técnicas."
         ),
         (
             "Os fatores associados sao sinais adicionais vindos de regras "
-            "acionadas e anomalias da comparacao historica; eles complementam a "
-            "interpretacao e nao substituem o evento principal."
+        "acionadas e anomalias da comparação histórica; eles complementam a "
+        "interpretação e não substituem o evento principal."
         ),
         (
-            "O historico INMET e usado como referencia para sinais historicos, "
-            "percentis e contexto da estacao; ele nao gera sozinho um aviso atual."
+        "O histórico do INMET é usado como referência para sinais históricos, "
+        "percentis e contexto da estação; ele não gera sozinho um aviso atual."
         ),
         (
-            "O sistema estima risco potencial e nao afirma a ocorrencia real de "
-            "desastre. Risco potencial de incendio representa uma condicao "
-            "meteorologica favoravel, e nao a confirmacao de um incendio."
+        "O sistema estima risco potencial e não afirma a ocorrência real de "
+        "desastre. Risco potencial de incêndio representa uma condição "
+        "meteorológica favorável, não a confirmação de um incêndio."
         ),
     ]
 
@@ -1461,13 +1573,13 @@ def build_methodological_detail_text(
         parts.append(comparison)
     else:
         parts.append(
-            "Quando ML e regras indicam o mesmo nivel, a comparacao e mantida "
+            "Quando ML e regras indicam o mesmo nível, a comparação é mantida "
             "nos cards para evitar repeticao no texto principal."
         )
 
     variables_text = _methodological_variables_text(risk, weather_data)
     if variables_text:
-        parts.append(f"Variaveis consideradas: {variables_text}.")
+        parts.append(f"Variáveis consideradas: {variables_text}.")
 
     anomaly_text = _methodological_anomaly_text(analysis_result)
     if anomaly_text:
@@ -1475,11 +1587,11 @@ def build_methodological_detail_text(
 
     station_label = _selected_station_label(selected_station)
     if station_label:
-        parts.append(f"Referencia historica INMET usada: {station_label}.")
+        parts.append(f"Referência histórica do INMET usada: {station_label}.")
 
     parts.append(
-        "O painel e um instrumento academico de apoio a decisao e nao substitui "
-        "comunicados ou orientacoes de orgaos competentes."
+        "O painel é um instrumento acadêmico de apoio à decisão e não substitui "
+        "comunicados ou orientações de órgãos competentes."
     )
     return " ".join(part.strip() for part in parts if str(part).strip())
 
@@ -1496,21 +1608,29 @@ def _methodological_variables_text(
 
     labels = []
     for key in variable_keys:
-        label = VARIABLE_DISPLAY.get(str(key), {}).get("label", str(key))
+        label = _variable_display_label(key)
         if label not in labels:
             labels.append(label)
     return ", ".join(labels)
+
+
+def _variable_display_label(variable: object) -> str:
+    key = str(variable)
+    current_weather_display = CURRENT_WEATHER_DISPLAY.get(key)
+    if current_weather_display:
+        return current_weather_display[0]
+    return str(VARIABLE_DISPLAY.get(key, {}).get("label", key))
 
 
 def _methodological_anomaly_text(
     analysis_result: dict[str, object] | None,
 ) -> str:
     if not analysis_result or not analysis_result.get("has_historical_data"):
-        return "Comparacao historica indisponivel para esta consulta."
+        return "Comparação histórica indisponível para esta consulta."
 
     anomalies = analysis_result.get("anomalies", [])
     if not isinstance(anomalies, list) or not anomalies:
-        return "Comparacao historica disponivel, sem anomalias destacadas."
+        return "Comparação histórica disponível, sem anomalias destacadas."
 
     labels = []
     for anomaly in anomalies:
@@ -1520,8 +1640,8 @@ def _methodological_anomaly_text(
         labels.append(ANOMALY_LABELS.get(anomaly_type, anomaly_type))
     labels_text = ", ".join(label for label in labels if label)
     return (
-        "Anomalias historicas destacadas nos detalhes tecnicos: "
-        f"{labels_text or 'nao identificadas'}."
+        "Anomalias históricas destacadas nos detalhes técnicos: "
+        f"{labels_text or 'não identificadas'}."
     )
 
 
@@ -1573,11 +1693,11 @@ def build_evidence_summary(
     return [
         {
             "label": "Temperatura",
-            "value": _format_value(weather_data.get("temperature"), "C"),
+            "value": _format_value(weather_data.get("temperature"), "°C"),
         },
         {
-            "label": "Sensacao termica",
-            "value": _format_value(weather_data.get("feels_like"), "C"),
+            "label": "Sensação térmica",
+            "value": _format_value(weather_data.get("feels_like"), "°C"),
         },
         {
             "label": "Umidade",
@@ -1592,15 +1712,15 @@ def build_evidence_summary(
             "value": _format_value(weather_data.get("wind_speed"), "km/h"),
         },
         {
-            "label": "Pressao",
+            "label": "Pressão",
             "value": _format_value(pressure_value, "hPa"),
         },
         {
-            "label": "Estacao INMET",
+            "label": "Estação INMET",
             "value": station_label,
         },
         {
-            "label": "Periodo historico",
+            "label": "Período histórico",
             "value": requested_period or "-",
         },
         {
@@ -1684,7 +1804,7 @@ def show_ml_prediction_section(
             col_model.markdown(
                 _html_card(
                     "Modelo selecionado",
-                    str(prediction_result.get("model_name") or "Nao informado"),
+                    str(prediction_result.get("model_name") or "Não informado"),
                     "Treinado fora do dashboard",
                     css_class="sac-card-ml",
                 ),
@@ -1692,8 +1812,8 @@ def show_ml_prediction_section(
             )
             col_metric.markdown(
                 _html_card(
-                    "Metrica de selecao",
-                    str(prediction_result.get("selection_metric") or "Nao informada"),
+                    "Métrica de seleção",
+                    str(prediction_result.get("selection_metric") or "Não informada"),
                     "Critério salvo no metadata",
                     css_class="sac-card-ml",
                 ),
@@ -1717,7 +1837,7 @@ def show_ml_prediction_section(
             for observation in observations:
                 st.caption(str(observation))
 
-        with st.expander("Features usadas na previsao ML"):
+        with st.expander("Variáveis usadas na previsão de ML"):
             rows = [
                 {"Feature": feature}
                 for feature in prediction_result.get("features_used", [])
@@ -1760,12 +1880,12 @@ def show_model_comparison_section(report_dir: str | Path = "data/reports") -> No
             st.code(ML_EVALUATION_COMMAND)
             return
 
-        st.caption(f"Relatorio usado: {report_result['source']}")
+        st.caption(f"Relatório usado: {report_result['source']}")
         rows = build_model_comparison_table(report_result["report"])
         if rows:
             st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         else:
-            st.info("O relatorio ML nao possui metricas por modelo para exibir.")
+            st.info("O relatório de ML não possui métricas por modelo para exibir.")
 
         summary = extract_best_model_summary(report_result["report"])
         col_baseline, col_best, col_diff = st.columns(3)
@@ -1852,7 +1972,7 @@ def show_result_analysis_section(
         selected_station=selected_station,
     )
 
-    st.subheader("Resultado da analise")
+    st.subheader("Resultado da análise")
     with st.container(border=True):
         col_summary, col_explanation = st.columns([1, 1.35])
         with col_summary:
@@ -1864,11 +1984,11 @@ def show_result_analysis_section(
             )
             metric_col_a, metric_col_b = st.columns(2)
             metric_col_a.metric("Modelo usado", str(summary["model_name"]))
-            metric_col_b.metric("Metrica", str(summary["selection_metric"]))
+            metric_col_b.metric("Métrica", str(summary["selection_metric"]))
             metric_col_c, metric_col_d = st.columns(2)
             metric_col_c.metric("Risco por regras", str(summary["rule_risk"]).upper())
-            metric_col_d.metric("Anomalias historicas", summary["anomaly_count"])
-            st.metric("Nivel de atencao", str(summary["attention_level"]))
+            metric_col_d.metric("Anomalias históricas", summary["anomaly_count"])
+            st.metric("Nível de atenção", str(summary["attention_level"]))
             st.info(_short_warning_text(summary))
 
         with col_explanation:
@@ -1911,7 +2031,7 @@ def show_evidence_section(
     analysis_result: dict[str, object] | None = None,
 ) -> None:
     """Mostra evidencias compactas usadas na analise."""
-    st.subheader("Evidencias usadas")
+    st.subheader("Evidências usadas")
     rows = build_evidence_summary(
         weather_data,
         selected_station=selected_station,
@@ -1944,7 +2064,7 @@ def show_warning_recommendations_section(
 
     st.markdown(f"#### {summary['warning_title']}")
     col_attention, col_event = st.columns(2)
-    col_attention.metric("Nivel de atencao", str(summary["attention_level"]))
+    col_attention.metric("Nível de atenção", str(summary["attention_level"]))
     col_event.metric("Evento principal", str(summary["primary_event_label"]))
     st.write(str(summary["warning_text"]))
 
@@ -1954,25 +2074,25 @@ def show_warning_recommendations_section(
         unsafe_allow_html=True,
     )
 
-    with st.expander("Evidencias consideradas", expanded=True):
+    with st.expander("Evidências consideradas", expanded=True):
         st.write(str(summary["evidence_text"]))
 
-    with st.expander("Recomendacao geral", expanded=True):
+    with st.expander("Recomendação geral", expanded=True):
         st.write(str(summary["public_recommendation"]))
 
     associated_factors = summary["associated_factors"]
     if isinstance(associated_factors, list) and associated_factors:
-        with st.expander("Recomendacoes por fator", expanded=True):
+        with st.expander("Recomendações por fator", expanded=True):
             for factor in associated_factors:
                 st.markdown(
                     f"- **{factor['label']}:** "
                     f"{build_factor_recommendation(factor)}"
                 )
 
-    with st.expander("Recomendacao para autoridades/responsaveis", expanded=True):
+    with st.expander("Recomendação para autoridades/responsáveis", expanded=True):
         st.write(str(summary["authority_recommendation"]))
 
-    with st.expander("Cautela metodologica"):
+    with st.expander("Cautela metodológica"):
         st.write(str(summary["methodological_caution"]))
         st.write(METHODOLOGICAL_NOTE_SHORT)
 
@@ -1990,16 +2110,16 @@ def show_technical_details_section(
     station_message: str = "",
 ) -> None:
     """Agrupa os detalhes tecnicos em abas."""
-    st.subheader("Detalhes tecnicos")
+    st.subheader("Detalhes técnicos")
     tabs = st.tabs(
         [
-            "Avisos e recomendacoes",
+            "Avisos e recomendações",
             MODEL_SELECTION_TAB_LABEL,
             "Probabilidades por classe",
-            "Features usadas pelo modelo",
+            "Variáveis usadas pelo modelo",
             "Regras acionadas",
-            "Estatisticas historicas",
-            "Variaveis brutas",
+            "Estatísticas históricas",
+            "Variáveis brutas",
         ]
     )
 
@@ -2022,7 +2142,7 @@ def show_technical_details_section(
         if probability_rows:
             st.dataframe(pd.DataFrame(probability_rows), width="stretch", hide_index=True)
         else:
-            st.caption("Este modelo nao disponibiliza probabilidades de classe.")
+            st.caption("Este modelo não disponibiliza probabilidades de classe.")
 
     with tabs[3]:
         if not (prediction_result or {}).get("available"):
@@ -2042,7 +2162,7 @@ def show_technical_details_section(
 
     with tabs[4]:
         if risk is None:
-            st.info("Classificacao por regras nao calculada para esta consulta.")
+            st.info("Classificação por regras não calculada para esta consulta.")
         else:
             show_weather_risk(risk)
 
@@ -2069,7 +2189,7 @@ def show_technical_details_section(
         with st.expander("Payload atual completo"):
             st.json(weather_data)
         if selected_station is not None:
-            with st.expander("Estacao INMET selecionada"):
+            with st.expander("Estação INMET selecionada"):
                 st.json(selected_station)
 
 
@@ -2227,51 +2347,51 @@ def _attention_variable_text(
     if analysis_result and analysis_result.get("has_historical_data"):
         variables = sorted(_anomalous_variables(analysis_result))
         labels = [
-            VARIABLE_DISPLAY.get(variable, {}).get("label", variable)
+            _variable_display_label(variable)
             for variable in variables
             if variable
         ]
         if labels:
-            return "As variaveis que mais chamaram atencao foram: " + ", ".join(
+            return "As variáveis que mais chamaram atenção foram: " + ", ".join(
                 labels[:3]
             ) + "."
 
     if risk and risk.triggered_rules:
         return (
-            "As regras acionadas apontam pontos de atencao em "
+            "As regras acionadas apontam pontos de atenção em "
             + ", ".join(str(rule) for rule in risk.triggered_rules[:2])
             + "."
         )
 
     if risk and risk.variables:
         labels = [
-            VARIABLE_DISPLAY.get(variable, {}).get("label", str(variable))
+            _variable_display_label(variable)
             for variable, value in risk.variables.items()
             if value is not None
         ]
         if labels:
-            return "As variaveis observadas incluem " + ", ".join(labels[:3]) + "."
+            return "As variáveis observadas incluem " + ", ".join(labels[:3]) + "."
 
-    return "Nenhuma variavel isolada foi destacada como anomalia principal."
+    return "Nenhuma variável isolada foi destacada como anomalia principal."
 
 
 def _historical_explanation_text(
     analysis_result: dict[str, object] | None,
 ) -> str:
     if not analysis_result or not analysis_result.get("has_historical_data"):
-        return "A comparacao historica ainda nao esta disponivel para esta consulta."
+        return "A comparação histórica ainda não está disponível para esta consulta."
 
     anomaly_count = _historical_anomaly_count(analysis_result)
     if anomaly_count == 0:
         return (
-            "A comparacao historica com o INMET nao encontrou anomalias "
+            "A comparação histórica com o INMET não encontrou anomalias "
             "principais nos valores atuais."
         )
 
     anomaly_text = _main_historical_anomaly_text(analysis_result)
     return (
-        f"A comparacao historica com o INMET encontrou {anomaly_count} "
-        f"anomalia(s); principal evidencia: {anomaly_text}."
+        f"A comparação histórica com o INMET encontrou {anomaly_count} "
+        f"anomalia(s); principal evidência: {anomaly_text}."
     )
 
 
@@ -2292,12 +2412,12 @@ def historical_analysis_status(
     if not weather_data:
         return (
             False,
-            "Carregue dados meteorologicos atuais para comparar com o INMET.",
+            "Carregue os dados meteorológicos atuais para comparar com o INMET.",
         )
     if history is None or history.empty:
         return (
             False,
-            "Carregue o historico INMET da estacao selecionada.",
+            "Carregue o histórico do INMET da estação selecionada.",
         )
     return True, ""
 
@@ -2318,7 +2438,7 @@ def format_historical_anomalies(
                 ),
                 "Severidade": str(anomaly.get("severity", "")),
                 "Valor atual": _format_value(anomaly.get("current_value"), unit),
-                "Referencia historica": _format_historical_reference(anomaly, unit),
+                "Referência histórica": _format_historical_reference(anomaly, unit),
                 "Justificativa": str(anomaly.get("reason", "")),
             }
         )
@@ -2356,17 +2476,17 @@ def build_historical_statistics_rows(
         )
         rows.append(
             {
-                "Variavel": VARIABLE_DISPLAY[variable]["label"],
+                "Variável": VARIABLE_DISPLAY[variable]["label"],
                 "Valor atual": _format_value(
                     current_value,
                     VARIABLE_DISPLAY[variable]["unit"],
                 ),
-                "Media historica": _format_value(
+                "Média histórica": _format_value(
                     stats.get("mean"),
                     VARIABLE_DISPLAY[variable]["unit"],
                 ),
                 "Percentil usado": _format_percentile_value(variable, stats),
-                "Interpretacao": _interpret_historical_variable(
+                "Interpretação": _interpret_historical_variable(
                     variable,
                     current_value,
                     pressure_comparison,
@@ -2384,7 +2504,7 @@ def build_pressure_reference_details(
 ) -> str:
     """Descreve o referencial de pressao usado na comparacao historica."""
     if not pressure_comparison.get("evaluated"):
-        return str(pressure_comparison.get("message", "Pressao nao avaliada."))
+        return str(pressure_comparison.get("message", "Pressão não avaliada."))
 
     station_pressure = _format_value(
         pressure_comparison.get("pressure_station_hpa"),
@@ -2395,11 +2515,11 @@ def build_pressure_reference_details(
         "hPa",
     )
     sea_level_text = (
-        f"Pressao ao nivel do mar informada pela OpenWeather: {sea_level_pressure}. "
+        f"Pressão ao nível do mar informada pela OpenWeather: {sea_level_pressure}. "
         if sea_level_pressure != "-"
         else ""
     )
-    suffix = " Comparacao feita no nivel da estacao INMET."
+    suffix = " Comparação feita no nível da estação do INMET."
     if pressure_comparison.get("is_estimated"):
         altitude = pressure_comparison.get("altitude_m")
         altitude_text = (
@@ -2410,8 +2530,8 @@ def build_pressure_reference_details(
         return (
             sea_level_text
             + (
-            "Pressao estimada ao nivel da estacao "
-            f"({station_pressure}){altitude_text}." + suffix
+                "Pressão estimada ao nível da estação "
+                f"({station_pressure}){altitude_text}." + suffix
             )
         )
 
@@ -2420,18 +2540,18 @@ def build_pressure_reference_details(
         return (
             sea_level_text
             + (
-            "Pressao ao nivel da estacao informada por grnd_level da "
-            f"OpenWeather ({station_pressure})." + suffix
+                "Pressão ao nível da estação informada por grnd_level da "
+                f"OpenWeather ({station_pressure})." + suffix
             )
         )
     if pressure_reference == "manual_station_level":
         return (
-            "Pressao manual tratada como pressao ao nivel da estacao "
+            "Pressão manual tratada como pressão ao nível da estação "
             f"({station_pressure})." + suffix
         )
 
     return (
-        "Pressao atual ao nivel da estacao usada diretamente "
+        "Pressão atual ao nível da estação usada diretamente "
         f"({station_pressure})." + suffix
     )
 
@@ -2500,16 +2620,16 @@ def resolve_station_for_weather_data(
     longitude = _optional_float(weather_data.get("longitude"))
     station = find_nearest_station_by_coordinates(latitude, longitude, station_catalog)
     if station is not None:
-        return station, "Estacao INMET associada automaticamente por coordenadas."
+        return station, "Estação do INMET associada automaticamente por coordenadas."
 
-    station = find_station_by_city_name(
-        str(weather_data.get("city", "")),
-        station_catalog,
+    municipality_name = str(
+        weather_data.get("municipality_name") or weather_data.get("city", "")
     )
+    station = find_station_by_city_name(municipality_name, station_catalog)
     if station is not None:
-        return station, "Estacao INMET associada automaticamente pelo nome da cidade."
+        return station, "Estação do INMET associada automaticamente pelo nome do município."
 
-    return None, "Nao foi possivel associar automaticamente uma estacao INMET."
+    return None, "Não foi possível associar automaticamente uma estação do INMET."
 
 
 def calculate_distance_km(
@@ -2560,12 +2680,12 @@ def historical_period_text(history: pd.DataFrame) -> str:
     """Formata periodo historico sem quebrar com datas de tipos mistos."""
     normalized_history = normalize_historical_datetime(history)
     if normalized_history.empty:
-        return "Nao identificado"
+        return "Não identificado"
 
     start_date = normalized_history["datetime"].min()
     end_date = normalized_history["datetime"].max()
     if pd.isna(start_date) or pd.isna(end_date):
-        return "Nao identificado"
+        return "Não identificado"
 
     return f"{start_date:%Y-%m-%d} a {end_date:%Y-%m-%d}"
 
@@ -2611,7 +2731,7 @@ def build_current_weather_rows(weather_data: dict[str, object]) -> list[dict[str
         if field in weather_data:
             rows.append(
                 {
-                    "Variavel": label,
+                    "Variável": label,
                     "Valor": _format_value(weather_data.get(field), unit),
                 }
             )
@@ -2621,31 +2741,31 @@ def build_current_weather_rows(weather_data: dict[str, object]) -> list[dict[str
 def build_current_pressure_text(weather_data: dict[str, object] | None) -> str:
     """Explica a pressao atual sem expor apenas nomes tecnicos."""
     if not weather_data:
-        return "Pressao atual indisponivel."
+        return "Pressão atual indisponível."
 
     pressure_reference = weather_data.get("pressure_reference")
     if pressure_reference == "openweather_grnd_level":
         return (
-            "Pressao usada na comparacao: valor ao nivel da estacao informado "
-            "pela OpenWeather. Esse referencial e compativel com o historico INMET."
+            "Pressão usada na comparação: valor ao nível da estação informado "
+            "pela OpenWeather. Esse referencial é compatível com o histórico do INMET."
         )
     if pressure_reference == "manual_station_level":
         return (
-            "Pressao usada na comparacao: valor manual tratado como pressao ao "
-            "nivel da estacao."
+            "Pressão usada na comparação: valor manual tratado como pressão ao "
+            "nível da estação."
         )
     if weather_data.get("pressure_station_hpa") is not None:
         return (
-            "Pressao usada na comparacao: valor atual ao nivel da estacao, "
-            "quando disponivel."
+            "Pressão usada na comparação: valor atual ao nível da estação, "
+            "quando disponível."
         )
     if weather_data.get("pressure_sea_level_hpa") is not None:
         return (
-            "A OpenWeather informou pressao ao nivel do mar. Para comparar com "
-            "o INMET, o sistema estima a pressao ao nivel da estacao usando a "
-            "altitude da estacao associada."
+            "A OpenWeather informou a pressão ao nível do mar. Para comparar com "
+            "o INMET, o sistema estima a pressão ao nível da estação usando a "
+            "altitude da estação associada."
         )
-    return "Pressao atual indisponivel para comparacao historica."
+    return "Pressão atual indisponível para comparação histórica."
 
 
 def format_event_type(event_type: str | None) -> str:
@@ -2662,45 +2782,45 @@ def build_interpretive_summary(
     """Monta resumo final em linguagem simples para apresentacao."""
     if not weather_data:
         return (
-            "Nao ha dados meteorologicos atuais carregados. Informe uma cidade "
-            "na OpenWeather ou use a entrada manual para iniciar a analise."
+            "Não há dados meteorológicos atuais carregados. Selecione um município "
+            "para consultar a OpenWeather ou use a entrada manual para iniciar a análise."
         )
 
     if risk is None:
         return (
             "Os dados atuais foram carregados, mas o alerta por regras ainda "
-            "nao foi calculado."
+            "não foi calculado."
         )
 
     event_label = format_event_type(risk.event_type)
     summary = (
-        f"A condicao atual apresenta risco {risk.risk_level} por {event_label}."
+        f"A condição atual apresenta risco {risk.risk_level} por {event_label}."
     )
 
     if not analysis_result or not analysis_result.get("has_historical_data"):
         return (
             summary
-            + " A comparacao com o historico INMET ainda nao esta disponivel "
+            + " A comparação com o histórico do INMET ainda não está disponível "
             "para esta consulta."
         )
 
     station_text = (
-        f" da estacao INMET associada ({station_label})"
+        f" da estação do INMET associada ({station_label})"
         if station_label
-        else " da estacao INMET associada"
+        else " da estação do INMET associada"
     )
     anomalies = analysis_result.get("anomalies", [])
     if not isinstance(anomalies, list) or not anomalies:
         return (
             summary
-            + f" Em comparacao com o historico{station_text}, os valores "
-            "atuais estao dentro do padrao estatistico observado para o periodo."
+            + f" Em comparação com o histórico{station_text}, os valores "
+            "atuais estão dentro do padrão estatístico observado para o período."
         )
 
     anomaly_text = _summarize_first_historical_anomaly(anomalies)
     return (
         summary
-        + f" Em comparacao com o historico{station_text}, {anomaly_text}."
+        + f" Em comparação com o histórico{station_text}, {anomaly_text}."
     )
 
 
@@ -2713,9 +2833,9 @@ def _summarize_first_historical_anomaly(
         anomaly_type = str(anomaly.get("anomaly_type", ""))
         return ANOMALY_SUMMARY_TEXT.get(
             anomaly_type,
-            "ha pelo menos uma variavel fora do padrao historico observado",
+            "há pelo menos uma variável fora do padrão histórico observado",
         )
-    return "ha pelo menos uma variavel fora do padrao historico observado"
+    return "há pelo menos uma variável fora do padrão histórico observado"
 
 
 def load_station_catalog_for_app(
@@ -2763,9 +2883,9 @@ def build_historical_source_status(
         metadata = metadata or {}
         return {
             "source_label": "DuckDB",
-            "status": "Base historica processada encontrada",
+            "status": "Base histórica processada encontrada",
             "details": (
-                "Consulta historica usando DuckDB filtrado por estacao e periodo. "
+                "Consulta histórica usando DuckDB filtrado por estação e período. "
                 f"Estacoes: {_format_table_cell(metadata.get('station_count'))}; "
                 f"registros: {_format_table_cell(metadata.get('record_count'))}."
             ),
@@ -2774,11 +2894,11 @@ def build_historical_source_status(
 
     return {
         "source_label": "ZIPs locais",
-        "status": "Base historica processada nao encontrada",
+        "status": "Base histórica processada não encontrada",
         "details": (
             "O dashboard tentara usar os ZIPs locais do INMET como fallback "
             "quando eles estiverem disponiveis. Em ambiente online sem ZIPs, "
-            "a consulta historica ficara indisponivel sem derrubar o app."
+            "a consulta histórica ficará indisponível sem interromper o aplicativo."
         ),
         "guidance": (
             "Para baixar a base processada, execute: "
@@ -2798,8 +2918,8 @@ def show_simplified_analysis_section(
     """Executa a consulta historica e mostra o fluxo compacto do dashboard."""
     if not weather_data:
         st.info(
-            "Carregue dados atuais por Entrada manual ou OpenWeather para "
-            "executar a analise."
+            "Carregue dados atuais pela entrada manual ou pela OpenWeather para "
+            "executar a análise."
         )
         return
 
@@ -2825,8 +2945,8 @@ def show_simplified_analysis_section(
     except InmetHistoricalDataError as error:
         st.warning(safe_dashboard_message(error, settings))
         st.info(
-            "A consulta continua com dados atuais, regras tecnicas e camada ML "
-            "quando houver modelo. Para habilitar historico INMET online, "
+            "A consulta continua com dados atuais, regras técnicas e camada de ML "
+            "quando houver modelo. Para habilitar o histórico do INMET on-line, "
             "configure o DuckDB por release ou inclua ZIPs locais no ambiente."
         )
         show_analysis_result_flow(
@@ -2892,7 +3012,7 @@ def show_simplified_analysis_section(
         return
 
     if history.empty:
-        st.warning("Nenhum registro historico foi carregado para esta estacao.")
+        st.warning("Nenhum registro histórico foi carregado para esta estação.")
         show_analysis_result_flow(
             weather_data=weather_data,
             risk=risk,
@@ -2953,8 +3073,8 @@ def show_inmet_historical_section(
     """Exibe comparacao historica local do INMET sem gerar alerta principal."""
     if not weather_data:
         st.info(
-            "Carregue dados atuais por Entrada manual ou OpenWeather para "
-            "executar a comparacao historica."
+            "Carregue dados atuais pela entrada manual ou pela OpenWeather para "
+            "executar a comparação histórica."
         )
         return
 
@@ -3054,7 +3174,7 @@ def show_inmet_historical_section(
         return
 
     if history.empty:
-        st.warning("Nenhum registro historico foi carregado para esta estacao.")
+        st.warning("Nenhum registro histórico foi carregado para esta estação.")
         if risk is not None:
             show_intelligent_diagnosis_section(prediction_result, risk, None)
             st.subheader("3. Predição por Machine Learning")
@@ -3093,7 +3213,7 @@ def show_inmet_historical_section(
     st.subheader(f"4. {MODEL_SELECTION_TAB_LABEL}")
     show_model_comparison_section()
 
-    st.subheader("5. Base historica associada")
+    st.subheader("5. Base histórica associada")
     with st.container(border=True):
         _show_station_selection_summary(
             selected_station,
@@ -3103,7 +3223,7 @@ def show_inmet_historical_section(
             len(history),
         )
         st.caption(station_message)
-        with st.expander("Detalhes da base historica"):
+    with st.expander("Detalhes da base histórica"):
             st.write(source_status["status"])
             st.write(source_status["details"])
             if source_status["guidance"]:
@@ -3117,33 +3237,33 @@ def show_inmet_historical_section(
                 format_requested_period(start_year, end_year),
             )
 
-    st.subheader("6. Comparacao historica")
+    st.subheader("6. Comparação histórica")
     with st.container(border=True):
         _show_historical_analysis_result(weather_data, analysis_result)
-        with st.expander("Registros carregados e medias historicas"):
-            metric_columns = st.columns(5)
-            metric_columns[0].metric(
-                "Temperatura media",
-                f"{averages['temperature']:.1f} C",
-            )
-            metric_columns[1].metric("Umidade media", f"{averages['humidity']:.1f}%")
-            metric_columns[2].metric(
-                "Pressao media",
-                f"{averages['pressure']:.1f} hPa",
-            )
-            metric_columns[3].metric(
-                "Vento medio",
-                f"{averages['wind_speed']:.1f} km/h",
-            )
-            metric_columns[4].metric(
-                "Precipitacao media",
-                f"{averages['precipitation']:.1f} mm",
-            )
-            st.caption(
-                "A pressao historica do INMET esta ao nivel da estacao. "
-                "A comparacao usa grnd_level da OpenWeather quando disponivel "
-                "ou estima a pressao pela altitude da estacao."
-            )
+    with st.expander("Registros carregados e médias históricas"):
+        metric_columns = st.columns(5)
+        metric_columns[0].metric(
+            "Temperatura média",
+            f"{averages['temperature']:.1f} °C",
+        )
+        metric_columns[1].metric("Umidade média", f"{averages['humidity']:.1f}%")
+        metric_columns[2].metric(
+            "Pressão média",
+            f"{averages['pressure']:.1f} hPa",
+        )
+        metric_columns[3].metric(
+            "Vento médio",
+            f"{averages['wind_speed']:.1f} km/h",
+        )
+        metric_columns[4].metric(
+            "Precipitação média",
+            f"{averages['precipitation']:.1f} mm",
+        )
+        st.caption(
+            "A pressão histórica do INMET está ao nível da estação. "
+            "A comparação usa grnd_level da OpenWeather quando disponível "
+            "ou estima a pressão pela altitude da estação."
+        )
 
     if risk is not None:
         st.subheader("7. Explicabilidade Técnica por Regras")
@@ -3169,7 +3289,7 @@ def _select_station_for_historical_flow(
 ) -> tuple[dict[str, object] | None, str]:
     station_options = [station.to_dict() for _, station in station_catalog.iterrows()]
     if not station_options:
-        return None, "Catalogo INMET sem estacoes disponiveis."
+        return None, "Catálogo do INMET sem estações disponíveis."
 
     option_labels = [str(station["station_label"]) for station in station_options]
     auto_station = None
@@ -3185,9 +3305,9 @@ def _select_station_for_historical_flow(
         default_index = (
             option_labels.index(auto_label) if auto_label in option_labels else 0
         )
-        with st.expander("Opcao avancada: alterar estacao INMET manualmente"):
+        with st.expander("Opção avançada: alterar a estação do INMET manualmente"):
             selected_label = st.selectbox(
-                "Estacao INMET de referencia",
+                "Estação do INMET de referência",
                 option_labels,
                 index=default_index,
                 key=f"historical_station_override_{selection_key}",
@@ -3197,23 +3317,23 @@ def _select_station_for_historical_flow(
 
         selected_station = station_options[option_labels.index(selected_label)]
         selected_station["station_resolution_method"] = "manual"
-        return selected_station, "Estacao INMET alterada manualmente pelo usuario."
+        return selected_station, "Estação do INMET alterada manualmente pelo usuário."
 
     if data_source == "OpenWeather":
         st.warning(auto_message)
-        expander_title = "Opcao avancada: alterar estacao INMET manualmente"
+        expander_title = "Opção avançada: alterar a estação do INMET manualmente"
         expander_expanded = True
     else:
         st.info(
-            "Na entrada manual, selecione a estacao INMET de referencia para "
-            "comparacao historica."
+            "Na entrada manual, selecione a estação do INMET de referência para "
+            "a comparação histórica."
         )
-        expander_title = "Estacao INMET de referencia"
+        expander_title = "Estação do INMET de referência"
         expander_expanded = True
 
     with st.expander(expander_title, expanded=expander_expanded):
         selected_label = st.selectbox(
-            "Estacao INMET",
+            "Estação do INMET",
             option_labels,
             index=0,
             key=f"historical_station_manual_{selection_key}",
@@ -3221,7 +3341,7 @@ def _select_station_for_historical_flow(
 
     selected_station = station_options[option_labels.index(selected_label)]
     selected_station["station_resolution_method"] = "manual"
-    return selected_station, "Estacao INMET selecionada manualmente."
+    return selected_station, "Estação do INMET selecionada manualmente."
 
 
 def _show_station_selection_summary(
@@ -3232,7 +3352,7 @@ def _show_station_selection_summary(
     record_count: int,
 ) -> None:
     col_station, col_code, col_state = st.columns([2, 1, 1])
-    col_station.metric("Estacao INMET associada", station_label)
+    col_station.metric("Estação do INMET associada", station_label)
     col_code.metric("Codigo", str(selected_station["station_code"]))
     col_state.metric("UF", str(selected_station["state"]))
 
@@ -3241,12 +3361,12 @@ def _show_station_selection_summary(
     )
     distance_km = selected_station.get("distance_km")
     details = [
-        f"Fonte historica: {historical_source_label}",
-        f"Periodo usado: {requested_period}",
+        f"Fonte histórica: {historical_source_label}",
+        f"Período usado: {requested_period}",
         f"Registros carregados: {record_count}",
     ]
     if _is_number(distance_km):
-        details.append(f"Distancia aproximada: {float(distance_km):.1f} km")
+        details.append(f"Distância aproximada: {float(distance_km):.1f} km")
     if _is_number(altitude_m):
         details.append(f"Altitude: {float(altitude_m):.1f} m")
     st.caption(" | ".join(details))
@@ -3282,7 +3402,7 @@ def _show_loaded_history_summary(
         distance_km = None
 
     summary_rows = [
-        {"Campo": "Estacao", "Valor": station_name},
+        {"Campo": "Estação", "Valor": station_name},
         {"Campo": "UF", "Valor": station_state or "-"},
         {"Campo": "Codigo", "Valor": station_code or "-"},
         {
@@ -3294,7 +3414,7 @@ def _show_loaded_history_summary(
             ),
         },
         {
-            "Campo": "Distancia aproximada",
+            "Campo": "Distância aproximada",
             "Valor": (
                 f"{float(distance_km):.1f} km"
                 if _is_number(distance_km)
@@ -3302,11 +3422,11 @@ def _show_loaded_history_summary(
             ),
         },
         {
-            "Campo": "Periodo solicitado",
+            "Campo": "Período solicitado",
             "Valor": requested_period,
         },
         {
-            "Campo": "Periodo encontrado nos registros",
+            "Campo": "Período encontrado nos registros",
             "Valor": historical_period_text(history),
         },
         {"Campo": "Registros", "Valor": str(len(history))},
@@ -3324,23 +3444,23 @@ def _show_historical_analysis_result(
     analysis_result: dict[str, object],
 ) -> None:
     if not analysis_result.get("has_historical_data"):
-        st.info(str(analysis_result.get("message", "Analise historica indisponivel.")))
+        st.info(str(analysis_result.get("message", "Análise histórica indisponível.")))
         return
 
     anomalies = analysis_result.get("anomalies", [])
     if not isinstance(anomalies, list):
         anomalies = []
 
-    st.write("Resultado da comparacao historica")
+    st.write("Resultado da comparação histórica")
     col_anomalies, col_pressure = st.columns(2)
-    col_anomalies.metric("Anomalias historicas", len(anomalies))
+    col_anomalies.metric("Anomalias históricas", len(anomalies))
     pressure_comparison = analysis_result.get("pressure_comparison", {})
     if not isinstance(pressure_comparison, dict):
         pressure_comparison = {}
     pressure_status = (
-        "avaliada" if pressure_comparison.get("evaluated") else "nao avaliada"
+        "avaliada" if pressure_comparison.get("evaluated") else "não avaliada"
     )
-    col_pressure.metric("Pressao", pressure_status)
+    col_pressure.metric("Pressão", pressure_status)
 
     if anomalies:
         anomaly_rows = format_safe_table_rows(format_historical_anomalies(anomalies))
@@ -3350,14 +3470,14 @@ def _show_historical_analysis_result(
                 f"{index}: {row['Tipo']}**  \n"
                 f"Severidade: {row['Severidade']}  \n"
                 f"Valor atual: {row['Valor atual']}  \n"
-                f"Referencia historica: {row['Referencia historica']}  \n"
-                f"Explicacao: {row['Justificativa']}"
+                f"Referência histórica: {row['Referência histórica']}  \n"
+                f"Explicação: {row['Justificativa']}"
             )
     else:
-        st.info("Nenhuma anomalia historica identificada para os dados atuais.")
+        st.info("Nenhuma anomalia histórica foi identificada para os dados atuais.")
 
     summary_rows = build_historical_statistics_rows(weather_data, analysis_result)
-    with st.expander("Percentis e estatisticas historicas usadas"):
+    with st.expander("Percentis e estatísticas históricas usadas"):
         if summary_rows:
             st.dataframe(
                 pd.DataFrame(format_safe_table_rows(summary_rows)),
@@ -3365,9 +3485,9 @@ def _show_historical_analysis_result(
                 hide_index=True,
             )
         else:
-            st.info("Nao ha estatisticas suficientes para exibir o resumo.")
+            st.info("Não há estatísticas suficientes para exibir o resumo.")
 
-    with st.expander("Detalhes tecnicos da pressao"):
+    with st.expander("Detalhes técnicos da pressão"):
         st.write(build_pressure_reference_details(weather_data, pressure_comparison))
 
 
@@ -3393,10 +3513,10 @@ def _show_historical_details(
         if station_message:
             st.caption(station_message)
     else:
-        st.info("Estacao INMET nao selecionada para esta consulta.")
+        st.info("Estação do INMET não selecionada para esta consulta.")
 
     if source_status:
-        with st.expander("Fonte historica usada"):
+        with st.expander("Fonte histórica usada"):
             st.write(source_status.get("status", ""))
             st.write(source_status.get("details", ""))
             if source_status.get("guidance"):
@@ -3404,7 +3524,7 @@ def _show_historical_details(
                 st.code("python scripts/download_inmet_database.py")
 
     if history is not None and not history.empty:
-        with st.expander("Registros historicos carregados"):
+        with st.expander("Registros históricos carregados"):
             _show_loaded_history_summary(
                 history,
                 selected_station,
@@ -3423,25 +3543,28 @@ def _show_historical_details(
             ].mean()
             metric_columns = st.columns(5)
             metric_columns[0].metric(
-                "Temperatura media",
-                f"{averages['temperature']:.1f} C",
+                "Temperatura média",
+                f"{averages['temperature']:.1f} °C",
             )
-            metric_columns[1].metric("Umidade media", f"{averages['humidity']:.1f}%")
+            metric_columns[1].metric(
+                "Umidade média",
+                f"{averages['humidity']:.1f}%",
+            )
             metric_columns[2].metric(
-                "Pressao media",
+                "Pressão média",
                 f"{averages['pressure']:.1f} hPa",
             )
             metric_columns[3].metric(
-                "Vento medio",
+                "Vento médio",
                 f"{averages['wind_speed']:.1f} km/h",
             )
             metric_columns[4].metric(
-                "Precipitacao media",
+                "Precipitação média",
                 f"{averages['precipitation']:.1f} mm",
             )
 
     if analysis_result is None:
-        st.info("Comparacao historica nao executada para esta consulta.")
+        st.info("Comparação histórica não executada para esta consulta.")
         return
 
     _show_historical_analysis_result(weather_data, analysis_result)
@@ -3540,12 +3663,12 @@ def _interpret_historical_variable(
     anomalous_variables: set[str],
 ) -> str:
     if variable == "pressure" and not pressure_comparison.get("evaluated"):
-        return "Pressao nao avaliada no mesmo referencial."
+        return "Pressão não avaliada no mesmo referencial."
     if current_value is None:
-        return "Dado atual indisponivel."
+        return "Dado atual indisponível."
     if variable in anomalous_variables:
-        return "Fora do padrao historico observado."
-    return "Dentro do padrao historico observado."
+        return "Fora do padrão histórico observado."
+    return "Dentro do padrão histórico observado."
 
 
 def _anomalous_variables(analysis_result: dict[str, object]) -> set[str]:
@@ -3777,7 +3900,7 @@ def show_dashboard_header() -> None:
             <h1>Sistema Inteligente de Alerta Climático</h1>
             <p>{DASHBOARD_SUBTITLE}</p>
             <div class="sac-pill-row">
-                <span class="sac-pill">Consulta por cidade</span>
+                <span class="sac-pill">Consulta por município</span>
                 <span class="sac-pill">ML supervisionado local</span>
             </div>
         </section>
@@ -3791,8 +3914,8 @@ def show_initial_state_guidance() -> None:
     with st.container(border=True):
         st.markdown("#### Fluxo da consulta")
         st.write(
-            "Busque uma cidade, confira o resultado principal e abra os detalhes "
-            "tecnicos apenas quando precisar ver regras, historico, features ou "
+            "Selecione um município, confira o resultado principal e abra os detalhes "
+            "técnicos apenas quando precisar ver regras, histórico, variáveis ou "
             "desempenho dos modelos."
         )
 
@@ -3812,10 +3935,10 @@ def main() -> None:
 
     form_is_compact = bool(st.session_state.get("dashboard_query"))
     query, submitted = build_query_form(settings, compact=form_is_compact)
-    with st.expander("Opcao secundaria: entrada manual de dados atuais"):
+    with st.expander("Opção secundária: entrada manual de dados atuais"):
         st.caption(
-            "Use apenas quando nao houver chave da OpenWeather ou para demonstrar "
-            "um cenario controlado."
+            "Use apenas quando não houver chave da OpenWeather ou para demonstrar "
+            "um cenário controlado."
         )
         manual_weather_data = build_manual_weather_data()
 
@@ -3833,17 +3956,20 @@ def main() -> None:
         elif str(query["data_source"]) == "Entrada manual":
             weather_data = {
                 **manual_weather_data,
-                "city": str(query["city"]).strip() or settings.default_city,
-                "country": str(query["country"]).strip().upper()
-                or settings.default_country,
+                "city": str(query["city"]),
+                "municipality_name": str(query["municipality_name"]),
+                "state_code": str(query["state_code"]),
+                "ibge_code": int(query["ibge_code"]),
+                "country": BRAZIL_COUNTRY_CODE,
             }
             st.session_state["dashboard_query"] = query
             st.session_state["dashboard_weather_data"] = weather_data
         else:
             weather_data = fetch_openweather_weather_data(
                 settings,
-                str(query["city"]),
-                str(query["country"]),
+                str(query["municipality_name"]),
+                str(query["state_code"]),
+                int(query["ibge_code"]),
             )
             if weather_data:
                 st.session_state["dashboard_query"] = query

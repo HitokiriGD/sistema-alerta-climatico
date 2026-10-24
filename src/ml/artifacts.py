@@ -96,7 +96,7 @@ def ensure_ml_artifacts_available(
             "missing_files": missing_after_download,
             "message": "",
             "error_message": (
-                "Download finalizado, mas alguns artefatos de ML ainda nao "
+                "Download finalizado, mas alguns artefatos de ML ainda não "
                 "foram encontrados no caminho configurado."
             ),
         }
