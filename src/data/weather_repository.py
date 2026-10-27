@@ -76,7 +76,7 @@ def connect_database(database_url: str):
         raise WeatherRepositoryError("Configure DATABASE_URL no .env.")
     if psycopg is None:
         raise WeatherRepositoryError(
-            "Dependencia psycopg ausente. Instale requirements.txt."
+            "Dependência psycopg ausente. Instale requirements.txt."
         )
     return psycopg.connect(database_url)
 

@@ -12,87 +12,87 @@ PROHIBITED_WARNING_TERMS = (
 
 RISK_LEVEL_MESSAGES = {
     "baixo": {
-        "title": "Condicao sem aviso relevante",
+        "title": "Condição sem aviso relevante",
         "description": (
-            "Condicao sem risco climatico relevante no momento. Recomenda-se "
+            "Condição sem risco climático relevante no momento. Recomenda-se "
             "acompanhamento normal."
         ),
         "action_level": "Acompanhamento normal",
         "public": (
-            "Manter rotina normal, acompanhar atualizacoes meteorologicas e "
-            "revisar a consulta se as condicoes mudarem."
+            "Manter a rotina normal, acompanhar as atualizações meteorológicas e "
+            "revisar a consulta se as condições mudarem."
         ),
         "authority": (
-            "Manter acompanhamento meteorologico de rotina e usar o resultado "
-            "como apoio a decisao."
+            "Manter o acompanhamento meteorológico de rotina e usar o resultado "
+            "como apoio à decisão."
         ),
         "caution": (
-            "Aviso interpretativo de apoio a decisao; nao substitui comunicados "
-            "de orgaos competentes."
+            "Aviso interpretativo de apoio à decisão; não substitui comunicados "
+            "de órgãos competentes."
         ),
     },
     "moderado": {
-        "title": "Atencao meteorologica",
+        "title": "Atenção meteorológica",
         "description": (
-            "Atencao: ha condicao meteorologica que merece acompanhamento. "
-            "Recomenda-se observar atualizacoes e evitar exposicao prolongada "
-            "quando aplicavel."
+            "Atenção: há uma condição meteorológica que merece acompanhamento. "
+            "Recomenda-se observar as atualizações e evitar exposição prolongada "
+            "quando aplicável."
         ),
-        "action_level": "Atencao e acompanhamento",
+        "action_level": "Atenção e acompanhamento",
         "public": (
-            "Acompanhar atualizacoes meteorologicas, reduzir exposicao "
-            "prolongada quando aplicavel e observar mudancas locais."
+            "Acompanhar as atualizações meteorológicas, reduzir a exposição "
+            "prolongada quando aplicável e observar mudanças locais."
         ),
         "authority": (
-            "Acompanhar a evolucao das variaveis, revisar dados locais e manter "
-            "equipes responsaveis informadas quando necessario."
+            "Acompanhar a evolução das variáveis, revisar os dados locais e manter "
+            "as equipes responsáveis informadas quando necessário."
         ),
         "caution": (
-            "Indicacao preventiva baseada nos dados disponiveis; requer "
-            "interpretacao junto ao contexto local."
+            "Indicação preventiva baseada nos dados disponíveis; requer "
+            "interpretação em conjunto com o contexto local."
         ),
     },
     "alto": {
-        "title": "Atencao reforcada",
+        "title": "Atenção reforçada",
         "description": (
-            "Atencao reforcada: o cenario apresenta sinais relevantes de risco "
-            "climatico potencial. Responsaveis locais devem acompanhar a "
-            "evolucao e avaliar medidas preventivas."
+            "Atenção reforçada: o cenário apresenta sinais relevantes de risco "
+            "climático potencial. Os responsáveis locais devem acompanhar a "
+            "evolução e avaliar medidas preventivas."
         ),
-        "action_level": "Atencao reforcada",
+        "action_level": "Atenção reforçada",
         "public": (
-            "Acompanhar atualizacoes com maior frequencia, reduzir exposicao a "
-            "condicoes adversas e priorizar medidas preventivas simples."
+            "Acompanhar as atualizações com maior frequência, reduzir a exposição a "
+            "condições adversas e priorizar medidas preventivas simples."
         ),
         "authority": (
-            "Avaliar medidas preventivas, acompanhar evidencias locais e manter "
-            "comunicacao de orientacao preparada conforme protocolos internos."
+            "Avaliar medidas preventivas, acompanhar as evidências locais e manter "
+            "a comunicação de orientação preparada conforme os protocolos internos."
         ),
         "caution": (
-            "O resultado indica risco potencial e nao confirma ocorrencia de "
-            "evento; use como apoio a decisao."
+            "O resultado indica risco potencial e não confirma a ocorrência de "
+            "um evento; use-o como apoio à decisão."
         ),
     },
     "critico": {
-        "title": "Aviso preventivo critico",
+        "title": "Aviso preventivo crítico",
         "description": (
-            "Aviso preventivo: o cenario apresenta condicao critica de risco "
-            "potencial. Responsaveis e autoridades devem avaliar comunicacao "
-            "preventiva e acoes de mitigacao conforme protocolos institucionais."
+            "Aviso preventivo: o cenário apresenta uma condição crítica de risco "
+            "potencial. Responsáveis e autoridades devem avaliar a comunicação "
+            "preventiva e as ações de mitigação conforme os protocolos institucionais."
         ),
         "action_level": "Prioridade preventiva",
         "public": (
-            "Acompanhar informacoes meteorologicas com atencao, evitar exposicao "
-            "desnecessaria a condicao de risco e seguir orientacoes de orgaos "
+            "Acompanhar as informações meteorológicas com atenção, evitar a exposição "
+            "desnecessária à condição de risco e seguir as orientações dos órgãos "
             "competentes."
         ),
         "authority": (
-            "Avaliar comunicacao preventiva, medidas de mitigacao e "
-            "monitoramento continuo conforme protocolos institucionais e dados "
+            "Avaliar a comunicação preventiva, as medidas de mitigação e o "
+            "monitoramento contínuo conforme os protocolos institucionais e os dados "
             "locais."
         ),
         "caution": (
-            "Classificacao preventiva de risco potencial; decisoes operacionais "
+            "Classificação preventiva de risco potencial; as decisões operacionais "
             "devem considerar protocolos e fontes institucionais."
         ),
     },
@@ -100,74 +100,74 @@ RISK_LEVEL_MESSAGES = {
 
 EVENT_GUIDANCE = {
     "sem_risco_relevante": {
-        "summary": "Nenhum evento principal foi destacado pelas regras tecnicas.",
-        "public": "Manter acompanhamento normal das atualizacoes meteorologicas.",
-        "authority": "Manter monitoramento de rotina e registrar a consulta como referencia.",
+        "summary": "Nenhum evento principal foi destacado pelas regras técnicas.",
+        "public": "Manter o acompanhamento normal das atualizações meteorológicas.",
+        "authority": "Manter o monitoramento de rotina e registrar a consulta como referência.",
     },
     "calor_extremo": {
-        "summary": "Condicao favoravel a estresse termico por calor.",
+        "summary": "Condição favorável a estresse térmico por calor.",
         "public": (
-            "Reforcar hidratacao, evitar exposicao prolongada ao sol e dar "
-            "atencao a criancas, idosos e pessoas vulneraveis."
+            "Reforçar a hidratação, evitar a exposição prolongada ao sol e dar "
+            "atenção a crianças, idosos e pessoas vulneráveis."
         ),
         "authority": (
-            "Acompanhar temperatura e sensacao termica, orientar locais de maior "
-            "exposicao e revisar medidas preventivas para grupos vulneraveis."
+            "Acompanhar a temperatura e a sensação térmica, orientar os locais de maior "
+            "exposição e revisar as medidas preventivas para grupos vulneráveis."
         ),
     },
     "baixa_umidade": {
-        "summary": "Condicao favoravel a desconforto e atencao respiratoria.",
+        "summary": "Condição favorável a desconforto e atenção respiratória.",
         "public": (
-            "Reforcar hidratacao, evitar atividade fisica intensa nos periodos "
-            "mais secos e observar sintomas respiratorios."
+            "Reforçar a hidratação, evitar atividade física intensa nos períodos "
+            "mais secos e observar sintomas respiratórios."
         ),
         "authority": (
-            "Acompanhar umidade relativa, orientar atividades externas e avaliar "
-            "medidas preventivas em escolas, trabalho externo e saude."
+            "Acompanhar a umidade relativa, orientar as atividades externas e avaliar "
+            "medidas preventivas em escolas, no trabalho externo e na saúde."
         ),
     },
     "chuva_intensa": {
-        "summary": "Condicao favoravel a acumulados de chuva e pontos de alagamento.",
+        "summary": "Condição favorável a acumulados de chuva e pontos de alagamento.",
         "public": (
-            "Acompanhar atualizacoes, planejar deslocamentos e evitar areas com "
-            "historico de alagamento ou enxurrada."
+            "Acompanhar as atualizações, planejar os deslocamentos e evitar áreas com "
+            "histórico de alagamento ou enxurrada."
         ),
         "authority": (
-            "Monitorar acumulados, areas sensiveis e rotas de deslocamento, "
-            "mantendo equipes responsaveis em acompanhamento."
+            "Monitorar os acumulados, as áreas sensíveis e as rotas de deslocamento, "
+            "mantendo as equipes responsáveis em acompanhamento."
         ),
     },
     "vento_forte": {
-        "summary": "Condicao favoravel a rajadas ou vento acima do padrao esperado.",
+        "summary": "Condição favorável a rajadas ou vento acima do padrão esperado.",
         "public": (
-            "Revisar objetos soltos, evitar proximidade de estruturas frageis e "
-            "ter atencao em deslocamentos."
+            "Revisar os objetos soltos, evitar a proximidade de estruturas frágeis e "
+            "ter atenção durante os deslocamentos."
         ),
         "authority": (
-            "Acompanhar velocidade do vento, estruturas temporarias e locais com "
-            "maior exposicao, avaliando medidas preventivas."
+            "Acompanhar a velocidade do vento, as estruturas temporárias e os locais "
+            "com maior exposição, avaliando medidas preventivas."
         ),
     },
     "frio_intenso": {
-        "summary": "Condicao favoravel a desconforto termico por frio.",
+        "summary": "Condição favorável a desconforto térmico por frio.",
         "public": (
-            "Evitar exposicao prolongada ao frio, reforcar protecao termica e "
-            "dar atencao a grupos vulneraveis."
+            "Evitar a exposição prolongada ao frio, reforçar a proteção térmica e "
+            "dar atenção aos grupos vulneráveis."
         ),
         "authority": (
-            "Acompanhar temperatura, sensacao termica e demanda social, avaliando "
-            "medidas preventivas para populacoes vulneraveis."
+            "Acompanhar a temperatura, a sensação térmica e a demanda social, avaliando "
+            "medidas preventivas para populações vulneráveis."
         ),
     },
     "risco_incendio": {
-        "summary": "Condicao favoravel a risco potencial de incendio em vegetacao seca.",
+        "summary": "Condição favorável a risco potencial de incêndio em vegetação seca.",
         "public": (
-            "Evitar queimadas, descartar materiais inflamaveis com cuidado e "
-            "acompanhar umidade e vento."
+            "Evitar queimadas, descartar materiais inflamáveis com cuidado e "
+            "acompanhar a umidade e o vento."
         ),
         "authority": (
-            "Acompanhar umidade, vento e vegetacao seca, reforcando orientacoes "
-            "preventivas e monitoramento de areas sensiveis."
+            "Acompanhar a umidade, o vento e a vegetação seca, reforçando as orientações "
+            "preventivas e o monitoramento de áreas sensíveis."
         ),
     },
 }
@@ -258,7 +258,7 @@ def build_warning_summary(
         station_label=station_label,
     )
     why = (
-        f"{warning['description']} Evidencias consideradas: {evidence}"
+        f"{warning['description']} Evidências consideradas: {evidence}"
         if evidence
         else warning["description"]
     )
@@ -267,7 +267,7 @@ def build_warning_summary(
     return {
         **warning,
         "warning_text": warning["description"],
-        "evidence_text": evidence or "Evidencias complementares indisponiveis.",
+        "evidence_text": evidence or "Evidências complementares indisponíveis.",
         "why_text": _sanitize_warning_text(why),
         "practical_recommendation": practical,
         "summary_text": _sanitize_warning_text(
@@ -319,12 +319,12 @@ def _build_evidence_text(
         evidence_parts.append(variable_text)
 
     if anomaly_count:
-        anomaly_text = str(main_anomaly or "anomalia historica").strip()
+        anomaly_text = str(main_anomaly or "anomalia histórica").strip()
         evidence_parts.append(
-            f"{anomaly_count} anomalia(s) historica(s), com destaque para {anomaly_text}"
+            f"{anomaly_count} anomalia(s) histórica(s), com destaque para {anomaly_text}"
         )
     if station_label:
-        evidence_parts.append(f"referencia INMET: {station_label}")
+        evidence_parts.append(f"referência INMET: {station_label}")
 
     return _sanitize_warning_text("; ".join(evidence_parts))
 
@@ -332,9 +332,9 @@ def _build_evidence_text(
 def _format_weather_evidence(weather_data: dict[str, object]) -> str:
     labels = [
         ("temperature", "temperatura", "C"),
-        ("feels_like", "sensacao termica", "C"),
+        ("feels_like", "sensação térmica", "°C"),
         ("humidity", "umidade", "%"),
-        ("precipitation", "precipitacao", "mm"),
+        ("precipitation", "precipitação", "mm"),
         ("wind_speed", "vento", "km/h"),
     ]
     values = []

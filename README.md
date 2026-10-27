@@ -786,15 +786,25 @@ O dashboard tambem exibe a secao `Comparacao com historico INMET`. Ela usa os
 dados atuais carregados por `Entrada manual` ou `OpenWeather` e compara esses
 valores com a serie historica de uma estacao INMET.
 
-No modo `OpenWeather`, o fluxo principal parte de um formulario unico no topo
-da tela. Informe cidade, pais, ano inicial e ano final do historico antes de
-clicar em `Buscar dados e comparar com historico`. O dashboard so busca dados
-atuais e historicos depois desse clique, usando exatamente o periodo escolhido.
-Em seguida, o sistema tenta associar a estacao INMET mais adequada. Primeiro
-ele usa latitude e longitude retornadas pela OpenWeather para escolher a estacao
-mais proxima no catalogo local do INMET. Se as coordenadas nao estiverem
-disponiveis, tenta encontrar uma estacao pelo nome da cidade. Depois carrega o
-historico da estacao no intervalo selecionado e executa o `HistoricalAnalyzer`.
+No modo `OpenWeather`, o fluxo principal parte de um formulário único no topo
+da tela. Selecione uma opção pesquisável no formato `Município/UF`, informe o
+ano inicial e o ano final do histórico e clique em `Buscar dados e comparar com
+o histórico`. O país não é solicitado: o dashboard fixa internamente `BR`.
+
+O catálogo oficial de municípios é carregado da API de Localidades do IBGE e
+mantido em cache pelo Streamlit. A pesquisa aceita texto com ou sem acentos e a
+UF diferencia municípios homônimos. Para cada consulta, o sistema obtém a malha
+oficial pelo código IBGE, calcula um ponto interno e chama a OpenWeather por
+latitude e longitude. O retorno só é aceito quando confirma `BR` e coordenadas
+compatíveis; caso contrário, a consulta é interrompida com uma mensagem
+amigável. Se o IBGE estiver indisponível sem dados em cache, a interface oferece
+temporariamente as capitais apenas para preservar a entrada manual e não faz uma
+consulta OpenWeather sem localização validada.
+
+Depois, o sistema usa as coordenadas para escolher a estação mais próxima no
+catálogo local do INMET, carrega o histórico no intervalo selecionado e executa
+o `HistoricalAnalyzer`. Na entrada manual, o nome do município selecionado é
+usado como alternativa para associar a estação.
 
 Na tela, o sistema prioriza o resultado principal da consulta:
 
@@ -846,9 +856,9 @@ Roteiro curto para apresentacao do TCC:
 1. Abrir o dashboard e apresentar o objetivo: dado atual por cidade,
    comparacao com historico INMET e Machine Learning supervisionado.
 2. Explicar as fontes: OpenWeather como dado atual e INMET como base historica.
-3. Informar uma cidade, por exemplo `Manaus`, selecionar o periodo historico,
-   por exemplo `2025` a `2026`, e clicar em `Buscar dados e comparar com
-   historico`.
+3. Selecionar um município, por exemplo `Manaus/AM`, escolher o período
+   histórico, por exemplo `2025` a `2026`, e clicar em `Buscar dados e comparar
+   com o histórico`.
 4. Apresentar `Resultado da analise` como conclusao principal.
 5. Explicar a coluna `Por que esse resultado?`, destacando concordancia ou
    divergencia entre ML supervisionado e regras tecnicas.
@@ -875,12 +885,13 @@ streamlit run app\streamlit_app.py
 
 No dashboard, use o formulario principal:
 
-- `Cidade`: cidade consultada na OpenWeather.
-- `Pais`: codigo do pais, como `BR`.
-- `Ano inicial do historico`: inicio do intervalo INMET.
-- `Ano final do historico`: fim do intervalo INMET.
-- `Fonte dos dados atuais`: `OpenWeather` por padrao ou `Entrada manual` como
-  opcao secundaria.
+- `Município/UF`: seleção pesquisável baseada no catálogo do IBGE.
+- `Ano inicial do histórico`: início do intervalo do INMET.
+- `Ano final do histórico`: fim do intervalo do INMET.
+- `Fonte dos dados atuais`: `OpenWeather` por padrão ou `Entrada manual` como
+  opção secundária.
+
+O país é sempre `BR` e não aparece como campo editável.
 
 O dashboard nao carrega historico antes do clique no botao. Se o usuario buscar
 `Manaus` com periodo `2025` a `2026`, a consulta ao DuckDB ou aos ZIPs locais

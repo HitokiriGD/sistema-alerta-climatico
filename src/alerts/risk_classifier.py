@@ -76,13 +76,13 @@ def classify_weather_risk(weather_data: dict[str, Any]) -> WeatherRisk:
             event_type="sem_risco_relevante",
             reason=(
                 "Nenhuma regra de risco relevante foi ativada para os dados "
-                "meteorologicos atuais informados."
+                "meteorológicos atuais informados."
             ),
             triggered_rules=[],
             variables=variables,
             recommendations=[
-                "Acompanhar atualizacoes meteorologicas caso as condicoes mudem.",
-                "Manter os dados atuais revisados antes de tomar decisoes.",
+                "Acompanhar as atualizações meteorológicas caso as condições mudem.",
+                "Manter os dados atuais revisados antes de tomar decisões.",
             ],
         )
 
@@ -129,7 +129,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "baixa_umidade_critica",
                 "critico",
                 "baixa_umidade",
-                f"Umidade relativa de {humidity:.1f}% esta em nivel critico.",
+                f"Umidade relativa de {humidity:.1f}% está em nível crítico.",
             )
         )
     elif humidity <= 20:
@@ -138,7 +138,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "baixa_umidade_alta",
                 "alto",
                 "baixa_umidade",
-                f"Umidade relativa de {humidity:.1f}% esta muito baixa.",
+                f"Umidade relativa de {humidity:.1f}% está muito baixa.",
             )
         )
     elif humidity <= 30:
@@ -147,7 +147,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "baixa_umidade_moderada",
                 "moderado",
                 "baixa_umidade",
-                f"Umidade relativa de {humidity:.1f}% esta abaixo do ideal.",
+                f"Umidade relativa de {humidity:.1f}% está abaixo do ideal.",
             )
         )
 
@@ -158,8 +158,8 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "critico",
                 "calor_extremo",
                 (
-                    f"Temperatura de {temperature:.1f} C e sensacao termica de "
-                    f"{feels_like:.1f} C indicam calor extremo critico."
+                    f"Temperatura de {temperature:.1f} °C e sensação térmica de "
+                    f"{feels_like:.1f} °C indicam calor extremo crítico."
                 ),
             )
         )
@@ -170,8 +170,8 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "alto",
                 "calor_extremo",
                 (
-                    f"Temperatura de {temperature:.1f} C ou sensacao termica de "
-                    f"{feels_like:.1f} C indicam calor elevado."
+                    f"Temperatura de {temperature:.1f} °C ou sensação térmica de "
+                    f"{feels_like:.1f} °C indicam calor elevado."
                 ),
             )
         )
@@ -182,8 +182,8 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "moderado",
                 "calor_extremo",
                 (
-                    f"Temperatura de {temperature:.1f} C ou sensacao termica de "
-                    f"{feels_like:.1f} C indicam calor moderado."
+                    f"Temperatura de {temperature:.1f} °C ou sensação térmica de "
+                    f"{feels_like:.1f} °C indicam calor moderado."
                 ),
             )
         )
@@ -194,7 +194,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "frio_intenso_critico",
                 "critico",
                 "frio_intenso",
-                f"Temperatura de {temperature:.1f} C esta em faixa critica de frio.",
+                f"Temperatura de {temperature:.1f} °C está em faixa crítica de frio.",
             )
         )
     elif temperature <= 5:
@@ -203,7 +203,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "frio_intenso_alto",
                 "alto",
                 "frio_intenso",
-                f"Temperatura de {temperature:.1f} C esta muito baixa.",
+                f"Temperatura de {temperature:.1f} °C está muito baixa.",
             )
         )
     elif temperature <= 10:
@@ -222,7 +222,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "chuva_intensa_critica",
                 "critico",
                 "chuva_intensa",
-                f"Precipitacao de {precipitation:.1f} mm indica chuva intensa.",
+                f"Precipitação de {precipitation:.1f} mm indica chuva intensa.",
             )
         )
     elif precipitation >= 25:
@@ -231,7 +231,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "chuva_intensa_alta",
                 "alto",
                 "chuva_intensa",
-                f"Precipitacao de {precipitation:.1f} mm esta elevada.",
+                f"Precipitação de {precipitation:.1f} mm está elevada.",
             )
         )
     elif precipitation >= 10:
@@ -240,7 +240,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "chuva_intensa_moderada",
                 "moderado",
                 "chuva_intensa",
-                f"Precipitacao de {precipitation:.1f} mm requer acompanhamento.",
+                f"Precipitação de {precipitation:.1f} mm requer acompanhamento.",
             )
         )
 
@@ -250,7 +250,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "vento_forte_critico",
                 "critico",
                 "vento_forte",
-                f"Vento de {wind_speed:.1f} km/h esta em faixa critica.",
+                f"Vento de {wind_speed:.1f} km/h está em faixa crítica.",
             )
         )
     elif wind_speed >= 50:
@@ -259,7 +259,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "vento_forte_alto",
                 "alto",
                 "vento_forte",
-                f"Vento de {wind_speed:.1f} km/h esta forte.",
+                f"Vento de {wind_speed:.1f} km/h está forte.",
             )
         )
     elif wind_speed >= 30:
@@ -268,7 +268,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "vento_forte_moderado",
                 "moderado",
                 "vento_forte",
-                f"Vento de {wind_speed:.1f} km/h requer atencao.",
+                f"Vento de {wind_speed:.1f} km/h requer atenção.",
             )
         )
 
@@ -285,7 +285,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "risco_incendio",
                 (
                     "Umidade muito baixa, calor, ausencia de chuva e vento "
-                    "favorecem risco critico de incendio."
+                    "favorecem risco crítico de incêndio."
                 ),
             )
         )
@@ -302,7 +302,7 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
                 "risco_incendio",
                 (
                     "Umidade baixa, temperatura elevada, ausencia de chuva e "
-                    "vento favorecem risco de incendio."
+                    "vento favorecem risco de incêndio."
                 ),
             )
         )
@@ -313,12 +313,12 @@ def _evaluate_rules(variables: dict[str, float]) -> list[TriggeredRule]:
 def _build_reason(main_rule: TriggeredRule, rules: list[TriggeredRule]) -> str:
     if len(rules) == 1:
         return (
-            f"Classificacao {main_rule.risk_level} para "
+            f"Classificação {main_rule.risk_level} para "
             f"{main_rule.event_type}: {main_rule.reason}"
         )
 
     return (
-        f"Classificacao {main_rule.risk_level} para {main_rule.event_type}, "
+        f"Classificação {main_rule.risk_level} para {main_rule.event_type}, "
         f"pois esta foi a regra de maior severidade entre {len(rules)} regras "
         f"acionadas. Principal motivo: {main_rule.reason}"
     )
@@ -327,33 +327,33 @@ def _build_reason(main_rule: TriggeredRule, rules: list[TriggeredRule]) -> str:
 def _recommendations_for_event(event_type: str) -> list[str]:
     recommendations = {
         "baixa_umidade": [
-            "Reforcar hidratacao e evitar esforco fisico intenso nos horarios secos.",
-            "Acompanhar a evolucao da umidade nas proximas atualizacoes.",
+            "Reforçar a hidratação e evitar esforço físico intenso nos horários secos.",
+            "Acompanhar a evolução da umidade nas próximas atualizações.",
         ],
         "calor_extremo": [
-            "Evitar exposicao prolongada ao sol nos horarios mais quentes.",
-            "Priorizar ambientes ventilados e ingestao regular de agua.",
+            "Evitar a exposição prolongada ao sol nos horários mais quentes.",
+            "Priorizar ambientes ventilados e a ingestão regular de água.",
         ],
         "frio_intenso": [
-            "Planejar protecao termica adequada para atividades externas.",
-            "Acompanhar atualizacoes de temperatura ao longo do dia.",
+            "Planejar a proteção térmica adequada para atividades externas.",
+            "Acompanhar as atualizações de temperatura ao longo do dia.",
         ],
         "chuva_intensa": [
-            "Evitar deslocamentos por areas sujeitas a alagamento.",
-            "Acompanhar a previsao local antes de atividades externas.",
+            "Evitar deslocamentos por áreas sujeitas a alagamento.",
+            "Acompanhar a previsão local antes de atividades externas.",
         ],
         "vento_forte": [
-            "Evitar areas abertas ou proximas a estruturas instaveis.",
-            "Revisar objetos soltos em areas externas.",
+            "Evitar áreas abertas ou próximas a estruturas instáveis.",
+            "Revisar os objetos soltos em áreas externas.",
         ],
         "risco_incendio": [
-            "Evitar queimas e descarte inadequado de material inflamavel.",
-            "Acompanhar orientacoes locais sobre manejo de fogo.",
+            "Evitar queimadas e o descarte inadequado de material inflamável.",
+            "Acompanhar as orientações locais sobre o manejo do fogo.",
         ],
     }
     return recommendations.get(
         event_type,
-        ["Acompanhar atualizacoes meteorologicas locais."],
+        ["Acompanhar as atualizações meteorológicas locais."],
     )
 
 

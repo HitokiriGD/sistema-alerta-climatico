@@ -153,7 +153,7 @@ def test_build_prediction_features_returns_friendly_error_when_missing() -> None
 
     assert result["available"] is False
     assert result["missing_features"] == ["humidity"]
-    assert "Nao foi possivel montar" in result["error_message"]
+    assert "Não foi possível montar" in result["error_message"]
 
 
 def test_prediction_result_contains_methodological_note() -> None:

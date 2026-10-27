@@ -109,17 +109,17 @@ class InmetClient:
         """Lista ZIPs anuais disponiveis na pasta configurada."""
         if not self.zip_dir.exists():
             raise InmetHistoricalDataError(
-                f"Pasta historica do INMET nao encontrada: {self.zip_dir}"
+                f"Pasta histórica do INMET não encontrada: {self.zip_dir}"
             )
         if not self.zip_dir.is_dir():
             raise InmetHistoricalDataError(
-                f"Caminho historico do INMET nao e uma pasta: {self.zip_dir}"
+                f"O caminho histórico do INMET não é uma pasta: {self.zip_dir}"
             )
 
         zip_paths = sorted(self.zip_dir.glob("*.zip"))
         if not zip_paths:
             raise InmetHistoricalDataError(
-                f"Nenhum ZIP historico do INMET encontrado em: {self.zip_dir}"
+                f"Nenhum ZIP histórico do INMET encontrado em: {self.zip_dir}"
             )
 
         return zip_paths
@@ -132,7 +132,9 @@ class InmetClient:
     ) -> list[Path]:
         """Filtra ZIPs anuais pelo intervalo informado."""
         if start_year > end_year:
-            raise InmetHistoricalDataError("Ano inicial nao pode ser maior que o final.")
+            raise InmetHistoricalDataError(
+                "O ano inicial não pode ser maior que o ano final."
+            )
 
         filtered_paths = [
             zip_path
@@ -142,7 +144,7 @@ class InmetClient:
         ]
         if not filtered_paths:
             raise InmetHistoricalDataError(
-                "Nenhum ZIP historico do INMET encontrado no intervalo informado."
+                "Nenhum ZIP histórico do INMET foi encontrado no intervalo informado."
             )
 
         return filtered_paths
@@ -251,7 +253,7 @@ class InmetClient:
         catalog = pd.DataFrame(stations.values(), columns=STATION_CATALOG_COLUMNS)
         if catalog.empty:
             raise InmetHistoricalDataError(
-                "Nenhuma estacao INMET encontrada nos ZIPs historicos."
+                "Nenhuma estação do INMET foi encontrada nos ZIPs históricos."
             )
 
         return catalog.sort_values(["state", "city", "station_code"]).reset_index(
@@ -279,7 +281,7 @@ class InmetClient:
         ].reset_index(drop=True)
         if matches.empty:
             raise InmetHistoricalDataError(
-                f"Estacao INMET nao encontrada para a opcao: {station_label}."
+                f"Estação do INMET não encontrada para a opção: {station_label}."
             )
 
         return matches.iloc[0].to_dict()
@@ -292,7 +294,9 @@ class InmetClient:
     ) -> pd.DataFrame:
         """Busca estacoes do catalogo por cidade e UF."""
         if not city.strip() or not state.strip():
-            raise InmetHistoricalDataError("Informe cidade e UF para buscar a estacao.")
+            raise InmetHistoricalDataError(
+                "Informe o município e a UF para buscar a estação."
+            )
 
         if catalog is None:
             station_catalog = self.build_station_catalog()
@@ -308,7 +312,7 @@ class InmetClient:
 
         if matches.empty:
             raise InmetHistoricalDataError(
-                "Nenhuma estacao INMET encontrada para "
+                "Nenhuma estação do INMET foi encontrada para "
                 f"{city.strip()}/{state_normalized}."
             )
 
@@ -324,7 +328,7 @@ class InmetClient:
         matches = self.find_stations_by_city_state(city, state, catalog)
         if len(matches) > 1:
             raise InmetHistoricalDataError(
-                f"Mais de uma estacao encontrada para {city.strip()}/{state.upper()}."
+                f"Mais de uma estação foi encontrada para {city.strip()}/{state.upper()}."
             )
 
         return matches.iloc[0].to_dict()
@@ -409,7 +413,7 @@ class InmetClient:
 
         if not station_frames:
             raise InmetHistoricalDataError(
-                f"Estacao {station_code.upper()} nao encontrada nos ZIPs informados."
+                f"Estação {station_code.upper()} não encontrada nos ZIPs informados."
             )
 
         history = pd.concat(station_frames, ignore_index=True)

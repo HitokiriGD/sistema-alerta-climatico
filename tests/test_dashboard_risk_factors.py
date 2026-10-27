@@ -165,9 +165,9 @@ def test_methodological_detail_separates_event_and_factors_safely() -> None:
 
     assert "evento principal" in detail.lower()
     assert "fatores associados" in detail.lower()
-    assert "nao substituem o evento principal" in detail.lower()
-    assert "nao afirma a ocorrencia real de desastre" in detail.lower()
-    assert "condicao meteorologica favoravel" in detail.lower()
+    assert "não substituem o evento principal" in detail.lower()
+    assert "não afirma a ocorrência real de desastre" in detail.lower()
+    assert "condição meteorológica favorável" in detail.lower()
     for forbidden in PROHIBITED_LANGUAGE:
         assert forbidden not in combined
 

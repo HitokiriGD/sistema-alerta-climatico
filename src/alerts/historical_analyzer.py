@@ -24,9 +24,9 @@ def resolve_current_pressure_for_historical_comparison(
             "evaluated": True,
             "pressure_station_hpa": station_pressure,
             "reference_used": "pressure_station_hpa",
-            "reference_label": "pressao ao nivel da estacao",
+            "reference_label": "pressão ao nível da estação",
             "is_estimated": False,
-            "message": "Pressao ao nivel da estacao usada na comparacao historica.",
+            "message": "Pressão ao nível da estação usada na comparação histórica.",
         }
 
     altitude_m = _resolve_altitude_m(station_metadata)
@@ -37,12 +37,12 @@ def resolve_current_pressure_for_historical_comparison(
                 "evaluated": False,
                 "pressure_station_hpa": None,
                 "reference_used": "pressure_sea_level_hpa",
-                "reference_label": "pressao ao nivel do mar",
+                "reference_label": "pressão ao nível do mar",
                 "is_estimated": False,
                 "message": (
-                    "Pressao nao avaliada: a OpenWeather informou pressao ao "
-                    "nivel do mar e nao ha altitude da estacao INMET para "
-                    "estimar a pressao ao nivel da estacao."
+                    "Pressão não avaliada: a OpenWeather informou a pressão ao "
+                    "nível do mar e não há altitude da estação do INMET para "
+                    "estimar a pressão ao nível da estação."
                 ),
             }
 
@@ -54,12 +54,12 @@ def resolve_current_pressure_for_historical_comparison(
             "evaluated": True,
             "pressure_station_hpa": estimated_pressure,
             "reference_used": "pressure_estimated_station_hpa",
-            "reference_label": "pressao estimada ao nivel da estacao",
+            "reference_label": "pressão estimada ao nível da estação",
             "is_estimated": True,
             "altitude_m": altitude_m,
             "message": (
-                "Pressao estimada ao nivel da estacao usada na comparacao "
-                f"historica, com altitude de {altitude_m:.1f} m."
+                "Pressão estimada ao nível da estação usada na comparação "
+                f"histórica, com altitude de {altitude_m:.1f} m."
             ),
         }
 
@@ -73,11 +73,11 @@ def resolve_current_pressure_for_historical_comparison(
             "evaluated": True,
             "pressure_station_hpa": legacy_pressure,
             "reference_used": "pressure_legacy_station_hpa",
-            "reference_label": "pressao ao nivel da estacao",
+            "reference_label": "pressão ao nível da estação",
             "is_estimated": False,
             "message": (
-                "Pressao do campo legado usada como pressao ao nivel da "
-                "estacao. Para OpenWeather, prefira pressure_sea_level_hpa "
+                "Pressão do campo legado usada como pressão ao nível da "
+                "estação. Para OpenWeather, prefira pressure_sea_level_hpa "
                 "e pressure_station_hpa."
             ),
         }
@@ -89,8 +89,8 @@ def resolve_current_pressure_for_historical_comparison(
         "reference_label": None,
         "is_estimated": False,
         "message": (
-            "Pressao nao avaliada: informe pressure_station_hpa ou forneca "
-            "pressure_sea_level_hpa com altitude da estacao INMET."
+            "Pressão não avaliada: informe pressure_station_hpa ou forneça "
+            "pressure_sea_level_hpa com a altitude da estação do INMET."
         ),
     }
 
@@ -173,10 +173,10 @@ class HistoricalAnalyzer:
                 "anomalies": [],
                 "statistics": {},
                 "pressure_comparison": _not_evaluated_pressure(
-                    "Pressao nao avaliada: historico ausente ou dados atuais "
+                    "Pressão não avaliada: histórico ausente ou dados atuais "
                     "incompletos."
                 ),
-                "message": "Historico ausente ou dados atuais incompletos.",
+                "message": "Histórico ausente ou dados atuais incompletos.",
             }
 
         target_month = current_date.month if current_date else datetime.now().month
@@ -188,11 +188,11 @@ class HistoricalAnalyzer:
                 "anomalies": [],
                 "statistics": {},
                 "pressure_comparison": _not_evaluated_pressure(
-                    "Pressao nao avaliada: estatisticas historicas insuficientes."
+                    "Pressão não avaliada: estatísticas históricas insuficientes."
                 ),
                 "message": (
-                    "Dados historicos insuficientes para calculo de "
-                    "estatisticas."
+                    "Dados históricos insuficientes para o cálculo de "
+                    "estatísticas."
                 ),
             }
 
@@ -217,8 +217,8 @@ class HistoricalAnalyzer:
                     "anomaly_type": "HIGH_TEMPERATURE",
                     "severity": "CRITICAL" if temp > s_temp["max"] else "HIGH",
                     "reason": (
-                        f"Temperatura atual ({temp:.1f} C) acima do percentil "
-                        f"95 historico ({s_temp['p95']:.1f} C)."
+                        f"Temperatura atual ({temp:.1f} °C) acima do percentil "
+                        f"95 histórico ({s_temp['p95']:.1f} °C)."
                     ),
                     "historical_reference": "Percentil 95",
                     "current_value": temp,
@@ -234,7 +234,7 @@ class HistoricalAnalyzer:
                     "severity": "CRITICAL" if hum < s_hum["min"] else "HIGH",
                     "reason": (
                         f"Umidade atual ({hum:.1f}%) abaixo do percentil "
-                        f"10 historico ({s_hum['p10']:.1f}%)."
+                        f"10 histórico ({s_hum['p10']:.1f}%)."
                     ),
                     "historical_reference": "Percentil 10",
                     "current_value": hum,
@@ -249,8 +249,8 @@ class HistoricalAnalyzer:
                     "anomaly_type": "HIGH_PRECIPITATION",
                     "severity": "HIGH",
                     "reason": (
-                        f"Precipitacao atual ({precip:.1f} mm) acima do "
-                        f"percentil 95 historico ({s_precip['p95']:.1f} mm)."
+                        f"Precipitação atual ({precip:.1f} mm) acima do "
+                        f"percentil 95 histórico ({s_precip['p95']:.1f} mm)."
                     ),
                     "historical_reference": "Percentil 95",
                     "current_value": precip,
@@ -266,7 +266,7 @@ class HistoricalAnalyzer:
                     "severity": "HIGH",
                     "reason": (
                         f"Velocidade do vento ({wind:.1f} km/h) acima do "
-                        f"percentil 95 historico ({s_wind['p95']:.1f} km/h)."
+                        f"percentil 95 histórico ({s_wind['p95']:.1f} km/h)."
                     ),
                     "historical_reference": "Percentil 95",
                     "current_value": wind,
@@ -282,7 +282,7 @@ class HistoricalAnalyzer:
             )
         else:
             pressure_comparison = _not_evaluated_pressure(
-                "Pressao nao avaliada: historico INMET sem coluna de pressao."
+                "Pressão não avaliada: histórico do INMET sem coluna de pressão."
             )
 
         if (
@@ -301,10 +301,10 @@ class HistoricalAnalyzer:
                     "anomaly_type": "POTENTIAL_FIRE_RISK",
                     "severity": "CRITICAL" if is_windy else "HIGH",
                     "reason": (
-                        "Condicao favoravel a risco potencial de incendio "
-                        "(baixa umidade, alta temperatura e vento acima do padrao)."
+                        "Condição favorável a risco potencial de incêndio "
+                        "(baixa umidade, alta temperatura e vento acima do padrão)."
                     ),
-                    "historical_reference": "Combinacao P25 Umidade + P75 Temperatura",
+                    "historical_reference": "Combinação P25 Umidade + P75 Temperatura",
                     "current_value": {"temp": temp, "humidity": hum, "wind": wind},
                     "historical_value": {
                         "p25_hum": stats["humidity"]["p25"],
@@ -319,7 +319,7 @@ class HistoricalAnalyzer:
             "statistics": stats,
             "pressure_comparison": pressure_comparison,
             "message": (
-                "Analise concluida com sucesso. "
+                "Análise concluída com sucesso. "
                 f"{len(anomalies)} anomalia(s) identificada(s)."
             ),
         }
@@ -355,10 +355,10 @@ class HistoricalAnalyzer:
                 "severity": "MEDIUM",
                 "reason": (
                     f"{pressure_comparison['reference_label'].capitalize()} "
-                    f"({press:.1f} hPa) fora do padrao historico INMET "
+                    f"({press:.1f} hPa) fora do padrão histórico do INMET "
                     f"({ref_label}: {ref_val:.1f} hPa)."
                 ),
-                "historical_reference": f"{ref_label} INMET nivel da estacao",
+                "historical_reference": f"{ref_label} INMET ao nível da estação",
                 "current_value": press,
                 "historical_value": ref_val,
                 "variables_used": ["pressure_station_hpa"],

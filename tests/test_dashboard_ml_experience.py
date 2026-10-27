@@ -126,7 +126,7 @@ def test_load_ml_evaluation_report_returns_friendly_message_when_missing(tmp_pat
     result = load_ml_evaluation_report(tmp_path / "reports")
 
     assert result["available"] is False
-    assert "Relatorio de avaliacao ML nao encontrado" in result["error_message"]
+    assert "Relatório de avaliação de ML não encontrado" in result["error_message"]
     assert "evaluate_ml_models.py" in result["error_message"]
 
 
@@ -153,12 +153,12 @@ def test_build_model_comparison_table_from_report() -> None:
 
 def test_model_selection_section_text_explains_report_scope() -> None:
     assert MODEL_SELECTION_TAB_LABEL == "Como o modelo principal foi escolhido"
-    assert "nao muda a cada consulta" in MODEL_SELECTION_EXPLANATION
-    assert "conjunto de avaliacao usado no treinamento" in MODEL_SELECTION_EXPLANATION
+    assert "não muda a cada consulta" in MODEL_SELECTION_EXPLANATION
+    assert "conjunto de avaliação usado no treinamento" in MODEL_SELECTION_EXPLANATION
     assert "melhor modelo salvo localmente" in MODEL_SELECTION_EXPLANATION
-    assert "f1_macro, nao accuracy" in MODEL_SELECTION_METRIC_NOTE
+    assert "f1_macro, não accuracy" in MODEL_SELECTION_METRIC_NOTE
     assert "classes desbalanceadas" in MODEL_SELECTION_METRIC_NOTE
-    assert "classe majoritaria" in MODEL_SELECTION_METRIC_NOTE
+    assert "classe majoritária" in MODEL_SELECTION_METRIC_NOTE
 
 
 def test_extract_best_model_summary() -> None:
@@ -230,9 +230,9 @@ def test_build_main_result_summary_prioritizes_ml_when_available() -> None:
     assert summary["ml_risk"] == "moderado"
     assert summary["rule_risk"] == "alto"
     assert summary["event_type"] == "baixa_umidade"
-    assert summary["attention_level"] == "Atencao e acompanhamento"
-    assert "Atencao" in summary["warning_text"]
-    assert "hidratacao" in summary["public_recommendation"]
+    assert summary["attention_level"] == "Atenção e acompanhamento"
+    assert "Atenção" in summary["warning_text"]
+    assert "hidratação" in summary["public_recommendation"]
     assert "autoridades" not in summary["warning_text"].lower()
     assert summary["anomaly_count"] == 1
     assert summary["model_name"] == "random_forest"
@@ -249,9 +249,9 @@ def test_build_main_result_summary_falls_back_to_rules_without_model() -> None:
 
     assert summary["final_risk"] == "alto"
     assert summary["ml_risk"] == "indisponivel"
-    assert summary["model_name"] == "Nao disponivel"
-    assert summary["result_label"] == "Classificacao tecnica por regras"
-    assert "regras tecnicas" in summary["result_caption"]
+    assert summary["model_name"] == "Não disponível"
+    assert summary["result_label"] == "Classificação técnica por regras"
+    assert "regras técnicas" in summary["result_caption"]
 
 
 def test_build_result_explanation_when_ml_and_rules_agree() -> None:
@@ -262,8 +262,8 @@ def test_build_result_explanation_when_ml_and_rules_agree() -> None:
     )
 
     assert "classificou a consulta como risco alto" in explanation
-    assert "principal evidencia" in explanation
-    assert "enquanto as regras tecnicas" not in explanation
+    assert "principal evidência" in explanation
+    assert "enquanto as regras técnicas" not in explanation
     assert sentence_count(explanation) <= 4
 
 
@@ -275,22 +275,22 @@ def test_build_result_explanation_when_ml_and_rules_diverge() -> None:
     )
 
     assert "indicou moderado" in explanation
-    assert "regras tecnicas indicaram alto" in explanation
+    assert "regras técnicas indicaram alto" in explanation
     assert sentence_count(explanation) <= 4
 
 
 def test_build_divergence_message_without_model() -> None:
     message = build_divergence_message("indisponivel", "alto")
 
-    assert "Machine Learning nao esta disponivel" in message
+    assert "Machine Learning não está disponível" in message
     assert "regras" in message
 
 
 def test_build_risk_recommendation_for_all_levels() -> None:
     assert "rotina normal" in build_risk_recommendation("baixo")
-    assert "Acompanhar atualizacoes" in build_risk_recommendation("moderado")
+    assert "Acompanhar as atualizações" in build_risk_recommendation("moderado")
     assert "medidas preventivas" in build_risk_recommendation("alto")
-    assert "exposicao desnecessaria" in build_risk_recommendation("critico")
+    assert "exposição desnecessária" in build_risk_recommendation("critico")
 
 
 def test_build_result_explanation_includes_warning_and_practical_guidance() -> None:
@@ -302,10 +302,10 @@ def test_build_result_explanation_includes_warning_and_practical_guidance() -> N
         selected_station={"station_label": "MANAUS - AM | A101"},
     )
 
-    assert "principal evidencia" in explanation
-    assert "Recomenda-se acompanhar atualizacoes meteorologicas" in explanation
+    assert "principal evidência" in explanation
+    assert "Recomenda-se acompanhar as atualizações meteorológicas" in explanation
     assert "MANAUS - AM | A101" not in explanation
-    assert "rotulos derivados" not in explanation
+    assert "rótulos derivados" not in explanation
     assert sentence_count(explanation) <= 4
 
 
@@ -332,7 +332,7 @@ def test_build_main_diagnosis_text_stays_short_and_avoids_variable_list() -> Non
     assert "wind_speed" not in text
     assert "pressure" not in text
     assert "MANAUS - AM | A101" not in text
-    assert "rotulos derivados" not in text
+    assert "rótulos derivados" not in text
     assert "percentil" not in text.lower()
 
 
@@ -345,8 +345,8 @@ def test_build_short_result_explanation_mentions_main_evidence_only() -> None:
 
     text = build_short_result_explanation(summary)
 
-    assert text.startswith("A principal evidencia foi")
-    assert "anomalia historica relevante" in text
+    assert text.startswith("A principal evidência foi")
+    assert "anomalia histórica relevante" in text
     assert "temperature" not in text
 
 
@@ -355,7 +355,7 @@ def test_model_rule_comparison_sentence_only_when_divergent() -> None:
     same = build_model_rule_comparison_sentence("alto", "alto")
 
     assert "modelo indicou alto" in divergent
-    assert "regras tecnicas indicaram moderado" in divergent
+    assert "regras técnicas indicaram moderado" in divergent
     assert same == ""
 
 
@@ -376,13 +376,33 @@ def test_methodological_detail_contains_caution_not_main_text() -> None:
         selected_station={"station_label": "MANAUS - AM | A101"},
     )
 
-    assert "rotulos derivados" not in main_text
-    assert "nao substitui" not in main_text
+    assert "rótulos derivados" not in main_text
+    assert "não substitui" not in main_text
     assert "derivados do classificador por regras" in detail_text
-    assert "nao substitui" in detail_text
+    assert "não substitui" in detail_text
     assert "INMET" in detail_text
     assert "MANAUS - AM | A101" in detail_text
-    assert "Variaveis consideradas" in detail_text
+    assert "Variáveis consideradas" in detail_text
+
+
+def test_methodological_detail_translates_current_weather_variable_names() -> None:
+    weather_data = make_weather_data()
+    weather_data["pressure_sea_level_hpa"] = 1012.0
+
+    detail_text = build_methodological_detail_text(
+        {"ml_risk": "alto", "rule_risk": "alto"},
+        risk=make_risk(),
+        analysis_result=make_analysis_result(),
+        weather_data=weather_data,
+        selected_station=None,
+    )
+
+    assert "Sensação térmica" in detail_text
+    assert "Pressão atmosférica ao nível do mar" in detail_text
+    assert "Pressão atmosférica ao nível da estação" in detail_text
+    assert "feels_like" not in detail_text
+    assert "pressure_sea_level_hpa" not in detail_text
+    assert "pressure_station_hpa" not in detail_text
 
 
 def test_build_evidence_summary_contains_compact_fields() -> None:
@@ -397,9 +417,9 @@ def test_build_evidence_summary_contains_compact_fields() -> None:
     )
 
     values_by_label = {row["label"]: row["value"] for row in rows}
-    assert values_by_label["Temperatura"] == "34.0 C"
-    assert values_by_label["Estacao INMET"] == "MANAUS - AM | A101"
-    assert values_by_label["Periodo historico"] == "2020 a 2026"
+    assert values_by_label["Temperatura"] == "34.0 °C"
+    assert values_by_label["Estação INMET"] == "MANAUS - AM | A101"
+    assert values_by_label["Período histórico"] == "2020 a 2026"
     assert "Umidade baixa" in values_by_label["Principal anomalia"]
 
 

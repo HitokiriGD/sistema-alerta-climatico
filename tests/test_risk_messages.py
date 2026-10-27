@@ -47,15 +47,15 @@ def test_build_event_specific_guidance_for_main_events(event_type: str) -> None:
 def test_public_recommendation_for_low_humidity_mentions_hydration() -> None:
     recommendation = build_public_recommendation("moderado", "baixa_umidade")
 
-    assert "hidratacao" in recommendation
-    assert "atividade fisica intensa" in recommendation
+    assert "hidratação" in recommendation
+    assert "atividade física intensa" in recommendation
 
 
 def test_authority_recommendation_for_fire_risk_mentions_monitoring() -> None:
     recommendation = build_authority_recommendation("alto", "risco_incendio")
 
     assert "umidade" in recommendation
-    assert "vegetacao seca" in recommendation
+    assert "vegetação seca" in recommendation
     assert "monitoramento" in recommendation
 
 

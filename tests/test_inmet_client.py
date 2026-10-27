@@ -76,7 +76,7 @@ def write_inmet_zip(
 def test_list_available_zips_missing_folder(tmp_path):
     client = InmetClient(make_settings(tmp_path / "inexistente"))
 
-    with pytest.raises(InmetHistoricalDataError, match="nao encontrada"):
+    with pytest.raises(InmetHistoricalDataError, match="não encontrada"):
         client.list_available_zips()
 
 
@@ -248,7 +248,7 @@ def test_find_stations_by_city_state_missing_city_raises_friendly_error(tmp_path
     write_inmet_zip(tmp_path, 2020, "A001", "BRASILIA", "DF", "CO")
     client = InmetClient(make_settings(tmp_path))
 
-    with pytest.raises(InmetHistoricalDataError, match="Nenhuma estacao"):
+    with pytest.raises(InmetHistoricalDataError, match="Nenhuma estação"):
         client.find_stations_by_city_state("Cidade Inexistente", "DF")
 
 
@@ -260,7 +260,7 @@ def test_find_stations_by_city_state_returns_multiple_options(tmp_path):
     matches = client.find_stations_by_city_state("brasilia", "DF")
 
     assert list(matches["station_code"]) == ["A001", "A002"]
-    with pytest.raises(InmetHistoricalDataError, match="Mais de uma estacao"):
+    with pytest.raises(InmetHistoricalDataError, match="Mais de uma estação"):
         client.find_station_by_city_state("brasilia", "DF")
 
 

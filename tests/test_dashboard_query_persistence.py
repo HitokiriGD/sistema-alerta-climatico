@@ -42,8 +42,16 @@ class FakeOpenWeatherClient:
     def __init__(self, settings):
         self.settings = settings
 
-    def fetch_current_weather(self, city):
-        return make_payload(city)
+    def fetch_current_weather_by_coordinates(self, latitude, longitude):
+        assert (latitude, longitude) == (-3.10, -60.02)
+        return make_payload("Manaus")
+
+
+class MismatchedOpenWeatherClient(FakeOpenWeatherClient):
+    def fetch_current_weather_by_coordinates(self, latitude, longitude):
+        payload = make_payload("Outra cidade")
+        payload["coord"] = {"lat": -23.55, "lon": -46.63}
+        return payload
 
 
 def make_settings(**overrides):
@@ -62,6 +70,7 @@ def make_payload(city: str = "Manaus") -> dict[str, object]:
         "name": city,
         "dt": 1_700_000_000,
         "coord": {"lat": -3.10, "lon": -60.02},
+        "sys": {"country": "BR"},
         "main": {
             "temp": 34.0,
             "feels_like": 38.0,
@@ -144,6 +153,21 @@ def test_raw_payload_is_saved_only_when_enabled() -> None:
     assert repository.observations[0]["raw_payload"] == payload
 
 
+def test_dashboard_persistence_keeps_municipality_uf_and_forces_brazil() -> None:
+    repository = FakeRepository()
+
+    persist_query_snapshot(
+        make_settings(),
+        make_payload("Bom Jesus"),
+        "Bom Jesus/PI",
+        "US",
+        repository=repository,
+    )
+
+    assert repository.observations[0]["city"] == "Bom Jesus/PI"
+    assert repository.observations[0]["country"] == "BR"
+
+
 def test_database_failure_is_controlled_and_does_not_expose_url() -> None:
     result = persist_query_snapshot(
         make_settings(),
@@ -165,13 +189,59 @@ def test_database_failure_is_controlled_and_does_not_expose_url() -> None:
 
 def test_dashboard_fetch_continues_without_supabase(monkeypatch) -> None:
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
+    monkeypatch.setattr(
+        streamlit_app,
+        "load_municipality_coordinates_for_app",
+        lambda ibge_code: (-3.10, -60.02),
+    )
     settings = make_settings(database_url="")
 
-    weather_data = fetch_openweather_weather_data(settings, "Manaus", "BR")
+    weather_data = fetch_openweather_weather_data(settings, "Manaus", "AM", 1302603)
 
     assert weather_data is not None
-    assert weather_data["city"] == "Manaus"
+    assert weather_data["city"] == "Manaus/AM"
+    assert weather_data["country"] == "BR"
     assert weather_data["data_source"] == "OpenWeather"
+
+
+def test_dashboard_fetch_rejects_unvalidated_location(monkeypatch) -> None:
+    errors = []
+    monkeypatch.setattr(
+        streamlit_app,
+        "OpenWeatherClient",
+        MismatchedOpenWeatherClient,
+    )
+    monkeypatch.setattr(
+        streamlit_app,
+        "load_municipality_coordinates_for_app",
+        lambda ibge_code: (-3.10, -60.02),
+    )
+    monkeypatch.setattr(streamlit_app.st, "error", errors.append)
+
+    weather_data = fetch_openweather_weather_data(
+        make_settings(database_url=""),
+        "Manaus",
+        "AM",
+        1302603,
+    )
+
+    assert weather_data is None
+    assert "outra localização" in errors[0]
+
+
+def test_dashboard_fetch_rejects_missing_ibge_code(monkeypatch) -> None:
+    errors = []
+    monkeypatch.setattr(streamlit_app.st, "error", errors.append)
+
+    weather_data = fetch_openweather_weather_data(
+        make_settings(database_url=""),
+        "Maceió",
+        "AL",
+        0,
+    )
+
+    assert weather_data is None
+    assert "validar com segurança" in errors[0]
 
 
 def test_dashboard_fetch_continues_when_database_insert_fails(monkeypatch) -> None:
@@ -181,6 +251,11 @@ def test_dashboard_fetch_continues_when_database_insert_fails(monkeypatch) -> No
         raise RuntimeError(f"database unavailable: {database_url}")
 
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
+    monkeypatch.setattr(
+        streamlit_app,
+        "load_municipality_coordinates_for_app",
+        lambda ibge_code: (-3.10, -60.02),
+    )
     monkeypatch.setattr(
         streamlit_app.weather_repository,
         "connect_database",
@@ -195,11 +270,12 @@ def test_dashboard_fetch_continues_when_database_insert_fails(monkeypatch) -> No
     weather_data = fetch_openweather_weather_data(
         make_settings(),
         "Manaus",
-        "BR",
+        "AM",
+        1302603,
     )
 
     assert weather_data is not None
-    assert weather_data["city"] == "Manaus"
+    assert weather_data["city"] == "Manaus/AM"
     assert statuses[0]["enabled"] is True
     assert statuses[0]["saved"] is False
     assert DATABASE_URL not in str(statuses[0])
@@ -219,6 +295,11 @@ def test_successful_openweather_fetch_triggers_query_persistence(monkeypatch) ->
         }
 
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
+    monkeypatch.setattr(
+        streamlit_app,
+        "load_municipality_coordinates_for_app",
+        lambda ibge_code: (-3.10, -60.02),
+    )
     monkeypatch.setattr(streamlit_app, "persist_query_snapshot", fake_persist)
     monkeypatch.setattr(
         streamlit_app,
@@ -229,9 +310,10 @@ def test_successful_openweather_fetch_triggers_query_persistence(monkeypatch) ->
     weather_data = fetch_openweather_weather_data(
         make_settings(),
         "Manaus",
-        "BR",
+        "AM",
+        1302603,
     )
 
     assert weather_data is not None
     assert len(persistence_calls) == 1
-    assert persistence_calls[0][1:] == ("Manaus", "BR")
+    assert persistence_calls[0][1:] == ("Manaus/AM", "BR")

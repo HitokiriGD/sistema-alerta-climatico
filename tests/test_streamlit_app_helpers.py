@@ -105,8 +105,8 @@ def test_build_deploy_artifact_guidance_handles_missing_artifacts(tmp_path) -> N
 
     combined_message = " ".join(guidance)
     assert "DuckDB" in combined_message
-    assert "Modelo ML" in combined_message
-    assert "Relatorio de avaliacao ML" in combined_message
+    assert "Modelo de ML" in combined_message
+    assert "Relatório de avaliação de ML" in combined_message
     assert "download_inmet_database.py" in combined_message
     assert "build_ml_dataset.py" in combined_message
     assert "train_ml_models.py" in combined_message
@@ -146,7 +146,18 @@ def test_resolve_station_for_weather_data_falls_back_to_city() -> None:
     assert station is not None
     assert station["station_code"] == "A101"
     assert station["station_resolution_method"] == "city"
-    assert "nome da cidade" in message
+    assert "nome do município" in message
+
+
+def test_manual_data_uses_municipality_name_instead_of_display_label() -> None:
+    station, message = resolve_station_for_weather_data(
+        {"city": "Manaus/AM", "municipality_name": "Manaus"},
+        make_station_catalog(),
+    )
+
+    assert station is not None
+    assert station["station_code"] == "A101"
+    assert "nome do município" in message
 
 
 def test_resolve_station_for_weather_data_reports_manual_fallback() -> None:
@@ -156,7 +167,7 @@ def test_resolve_station_for_weather_data_reports_manual_fallback() -> None:
     )
 
     assert station is None
-    assert "Nao foi possivel" in message
+    assert "Não foi possível" in message
 
 
 def test_format_safe_table_rows_converts_mixed_values_to_strings() -> None:
@@ -213,7 +224,7 @@ def test_historical_period_text_handles_2000_to_2026() -> None:
 def test_historical_period_text_without_valid_date() -> None:
     history = pd.DataFrame({"datetime": [None, 123.4]})
 
-    assert historical_period_text(history) == "Nao identificado"
+    assert historical_period_text(history) == "Não identificado"
 
 
 def test_validate_historical_period_accepts_valid_interval() -> None:
@@ -312,14 +323,14 @@ def test_historical_analysis_status_requires_current_data() -> None:
     can_analyze, message = historical_analysis_status(None, None)
 
     assert can_analyze is False
-    assert "dados meteorologicos atuais" in message
+    assert "dados meteorológicos atuais" in message
 
 
 def test_historical_analysis_status_requires_history() -> None:
     can_analyze, message = historical_analysis_status({"temperature": 30.0}, None)
 
     assert can_analyze is False
-    assert "historico INMET" in message
+    assert "histórico do INMET" in message
 
 
 def test_format_historical_anomalies_uses_wind_kmh() -> None:
@@ -342,7 +353,7 @@ def test_format_historical_anomalies_uses_wind_kmh() -> None:
             "Tipo": "Vento forte",
             "Severidade": "HIGH",
             "Valor atual": "55.0 km/h",
-            "Referencia historica": "Percentil 95: 40.0 km/h",
+            "Referência histórica": "Percentil 95: 40.0 km/h",
             "Justificativa": "Vento acima do padrao historico.",
         }
     ]
@@ -359,12 +370,12 @@ def test_build_pressure_reference_details_for_estimated_pressure() -> None:
         },
     )
 
-    assert "Pressao estimada ao nivel da estacao" in message
-    assert "nivel do mar" in message
+    assert "Pressão estimada ao nível da estação" in message
+    assert "nível do mar" in message
     assert "1010.0 hPa" in message
     assert "878.6 hPa" in message
     assert "1160.0 m" in message
-    assert "nivel da estacao INMET" in message
+    assert "nível da estação do INMET" in message
 
 
 def test_build_pressure_reference_details_for_grnd_level() -> None:
@@ -409,8 +420,8 @@ def test_build_historical_statistics_rows_marks_pressure_reference() -> None:
         },
     )
 
-    pressure_row = next(row for row in rows if row["Variavel"] == "Pressao")
-    wind_row = next(row for row in rows if row["Variavel"] == "Vento")
+    pressure_row = next(row for row in rows if row["Variável"] == "Pressão")
+    wind_row = next(row for row in rows if row["Variável"] == "Vento")
 
     assert pressure_row["Valor atual"] == "878.6 hPa"
     assert pressure_row["Percentil usado"] == "P5 a P95: 870.0 hPa a 905.0 hPa"
@@ -424,7 +435,7 @@ def test_build_historical_source_status_for_database() -> None:
     )
 
     assert status["source_label"] == "DuckDB"
-    assert status["status"] == "Base historica processada encontrada"
+    assert status["status"] == "Base histórica processada encontrada"
     assert "Estacoes: 2" in status["details"]
     assert status["guidance"] == ""
 
@@ -433,7 +444,7 @@ def test_build_historical_source_status_for_zip_fallback() -> None:
     status = build_historical_source_status("zip")
 
     assert status["source_label"] == "ZIPs locais"
-    assert status["status"] == "Base historica processada nao encontrada"
+    assert status["status"] == "Base histórica processada não encontrada"
     assert "python scripts/download_inmet_database.py" in status["guidance"]
 
 
@@ -442,15 +453,15 @@ def test_build_current_pressure_text_for_station_level() -> None:
         {"pressure_reference": "openweather_grnd_level"}
     )
 
-    assert "nivel da estacao" in message
+    assert "nível da estação" in message
     assert "OpenWeather" in message
 
 
 def test_build_current_pressure_text_for_estimated_by_altitude() -> None:
     message = build_current_pressure_text({"pressure_sea_level_hpa": 1010.0})
 
-    assert "nivel do mar" in message
-    assert "altitude da estacao" in message
+    assert "nível do mar" in message
+    assert "altitude da estação" in message
 
 
 def test_build_interpretive_summary_with_historical_anomaly() -> None:
@@ -466,7 +477,7 @@ def test_build_interpretive_summary_with_historical_anomaly() -> None:
 
     assert "risco moderado por baixa umidade" in summary
     assert "MANAUS - AM | A101" in summary
-    assert "umidade esta abaixo do padrao esperado" in summary
+    assert "umidade está abaixo do padrão esperado" in summary
 
 
 def test_build_interpretive_summary_without_history() -> None:
@@ -478,10 +489,10 @@ def test_build_interpretive_summary_without_history() -> None:
     )
 
     assert "risco moderado por baixa umidade" in summary
-    assert "historico INMET ainda nao esta disponivel" in summary
+    assert "histórico do INMET ainda não está disponível" in summary
 
 
 def test_build_interpretive_summary_without_current_data() -> None:
     summary = build_interpretive_summary(None, make_risk(), None, None)
 
-    assert "Nao ha dados meteorologicos atuais carregados" in summary
+    assert "Não há dados meteorológicos atuais carregados" in summary
