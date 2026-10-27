@@ -189,14 +189,16 @@ def test_database_failure_is_controlled_and_does_not_expose_url() -> None:
 
 def test_dashboard_fetch_continues_without_supabase(monkeypatch) -> None:
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
-    monkeypatch.setattr(
-        streamlit_app,
-        "load_municipality_coordinates_for_app",
-        lambda ibge_code: (-3.10, -60.02),
-    )
     settings = make_settings(database_url="")
 
-    weather_data = fetch_openweather_weather_data(settings, "Manaus", "AM", 1302603)
+    weather_data = fetch_openweather_weather_data(
+        settings,
+        "Manaus",
+        "AM",
+        1302603,
+        -3.10,
+        -60.02,
+    )
 
     assert weather_data is not None
     assert weather_data["city"] == "Manaus/AM"
@@ -211,11 +213,6 @@ def test_dashboard_fetch_rejects_unvalidated_location(monkeypatch) -> None:
         "OpenWeatherClient",
         MismatchedOpenWeatherClient,
     )
-    monkeypatch.setattr(
-        streamlit_app,
-        "load_municipality_coordinates_for_app",
-        lambda ibge_code: (-3.10, -60.02),
-    )
     monkeypatch.setattr(streamlit_app.st, "error", errors.append)
 
     weather_data = fetch_openweather_weather_data(
@@ -223,6 +220,8 @@ def test_dashboard_fetch_rejects_unvalidated_location(monkeypatch) -> None:
         "Manaus",
         "AM",
         1302603,
+        -3.10,
+        -60.02,
     )
 
     assert weather_data is None
@@ -238,6 +237,8 @@ def test_dashboard_fetch_rejects_missing_ibge_code(monkeypatch) -> None:
         "Maceió",
         "AL",
         0,
+        -9.65,
+        -35.73,
     )
 
     assert weather_data is None
@@ -251,11 +252,6 @@ def test_dashboard_fetch_continues_when_database_insert_fails(monkeypatch) -> No
         raise RuntimeError(f"database unavailable: {database_url}")
 
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
-    monkeypatch.setattr(
-        streamlit_app,
-        "load_municipality_coordinates_for_app",
-        lambda ibge_code: (-3.10, -60.02),
-    )
     monkeypatch.setattr(
         streamlit_app.weather_repository,
         "connect_database",
@@ -272,6 +268,8 @@ def test_dashboard_fetch_continues_when_database_insert_fails(monkeypatch) -> No
         "Manaus",
         "AM",
         1302603,
+        -3.10,
+        -60.02,
     )
 
     assert weather_data is not None
@@ -295,11 +293,6 @@ def test_successful_openweather_fetch_triggers_query_persistence(monkeypatch) ->
         }
 
     monkeypatch.setattr(streamlit_app, "OpenWeatherClient", FakeOpenWeatherClient)
-    monkeypatch.setattr(
-        streamlit_app,
-        "load_municipality_coordinates_for_app",
-        lambda ibge_code: (-3.10, -60.02),
-    )
     monkeypatch.setattr(streamlit_app, "persist_query_snapshot", fake_persist)
     monkeypatch.setattr(
         streamlit_app,
@@ -312,6 +305,8 @@ def test_successful_openweather_fetch_triggers_query_persistence(monkeypatch) ->
         "Manaus",
         "AM",
         1302603,
+        -3.10,
+        -60.02,
     )
 
     assert weather_data is not None

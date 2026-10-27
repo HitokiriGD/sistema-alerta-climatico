@@ -1,71 +1,79 @@
+import csv
 from dataclasses import dataclass
 import math
+from pathlib import Path
 import unicodedata
-from typing import Any
-
-import requests
 
 
-IBGE_MUNICIPALITIES_URL = (
-    "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
-)
-IBGE_MUNICIPALITY_MESH_URL = (
-    "https://servicodados.ibge.gov.br/api/v3/malhas/municipios/{ibge_code}"
-)
 BRAZIL_COUNTRY_CODE = "BR"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_MUNICIPALITY_CATALOG_PATH = (
+    PROJECT_ROOT / "data" / "reference" / "brazilian_municipalities.csv"
+)
+CATALOG_COLUMNS = (
+    "ibge_code",
+    "name",
+    "uf",
+    "latitude",
+    "longitude",
+)
+MINIMUM_MUNICIPALITY_COUNT = 5_500
+BRAZIL_LATITUDE_RANGE = (-35.0, 6.0)
+BRAZIL_LONGITUDE_RANGE = (-75.0, -32.0)
+STATE_NAMES = {
+    "AC": "Acre",
+    "AL": "Alagoas",
+    "AP": "Amapá",
+    "AM": "Amazonas",
+    "BA": "Bahia",
+    "CE": "Ceará",
+    "DF": "Distrito Federal",
+    "ES": "Espírito Santo",
+    "GO": "Goiás",
+    "MA": "Maranhão",
+    "MT": "Mato Grosso",
+    "MS": "Mato Grosso do Sul",
+    "MG": "Minas Gerais",
+    "PA": "Pará",
+    "PB": "Paraíba",
+    "PR": "Paraná",
+    "PE": "Pernambuco",
+    "PI": "Piauí",
+    "RJ": "Rio de Janeiro",
+    "RN": "Rio Grande do Norte",
+    "RS": "Rio Grande do Sul",
+    "RO": "Rondônia",
+    "RR": "Roraima",
+    "SC": "Santa Catarina",
+    "SP": "São Paulo",
+    "SE": "Sergipe",
+    "TO": "Tocantins",
+}
+VALID_STATE_CODES = frozenset(STATE_NAMES)
 
 
 class MunicipalityCatalogError(RuntimeError):
-    """Erro controlado ao carregar o catálogo oficial de municípios."""
+    """Erro controlado ao carregar o catálogo local de municípios."""
 
 
 class MunicipalityLocationError(RuntimeError):
-    """Erro controlado ao resolver uma coordenada segura para o município."""
+    """Erro controlado ao validar coordenadas de um município."""
 
 
 @dataclass(frozen=True)
 class BrazilianMunicipality:
-    """Identificação oficial de um município brasileiro."""
+    """Identificação e coordenadas de um município brasileiro."""
 
     ibge_code: int
     name: str
     state_code: str
     state_name: str
+    latitude: float
+    longitude: float
 
     @property
     def label(self) -> str:
         return f"{self.name}/{self.state_code}"
-
-
-FALLBACK_CAPITALS: tuple[BrazilianMunicipality, ...] = (
-    BrazilianMunicipality(0, "Rio Branco", "AC", "Acre"),
-    BrazilianMunicipality(0, "Maceió", "AL", "Alagoas"),
-    BrazilianMunicipality(0, "Macapá", "AP", "Amapá"),
-    BrazilianMunicipality(0, "Manaus", "AM", "Amazonas"),
-    BrazilianMunicipality(0, "Salvador", "BA", "Bahia"),
-    BrazilianMunicipality(0, "Fortaleza", "CE", "Ceará"),
-    BrazilianMunicipality(0, "Brasília", "DF", "Distrito Federal"),
-    BrazilianMunicipality(0, "Vitória", "ES", "Espírito Santo"),
-    BrazilianMunicipality(0, "Goiânia", "GO", "Goiás"),
-    BrazilianMunicipality(0, "São Luís", "MA", "Maranhão"),
-    BrazilianMunicipality(0, "Cuiabá", "MT", "Mato Grosso"),
-    BrazilianMunicipality(0, "Campo Grande", "MS", "Mato Grosso do Sul"),
-    BrazilianMunicipality(0, "Belo Horizonte", "MG", "Minas Gerais"),
-    BrazilianMunicipality(0, "Belém", "PA", "Pará"),
-    BrazilianMunicipality(0, "João Pessoa", "PB", "Paraíba"),
-    BrazilianMunicipality(0, "Curitiba", "PR", "Paraná"),
-    BrazilianMunicipality(0, "Recife", "PE", "Pernambuco"),
-    BrazilianMunicipality(0, "Teresina", "PI", "Piauí"),
-    BrazilianMunicipality(0, "Rio de Janeiro", "RJ", "Rio de Janeiro"),
-    BrazilianMunicipality(0, "Natal", "RN", "Rio Grande do Norte"),
-    BrazilianMunicipality(0, "Porto Alegre", "RS", "Rio Grande do Sul"),
-    BrazilianMunicipality(0, "Porto Velho", "RO", "Rondônia"),
-    BrazilianMunicipality(0, "Boa Vista", "RR", "Roraima"),
-    BrazilianMunicipality(0, "Florianópolis", "SC", "Santa Catarina"),
-    BrazilianMunicipality(0, "São Paulo", "SP", "São Paulo"),
-    BrazilianMunicipality(0, "Aracaju", "SE", "Sergipe"),
-    BrazilianMunicipality(0, "Palmas", "TO", "Tocantins"),
-)
 
 
 def normalize_search_text(value: object) -> str:
@@ -121,46 +129,41 @@ def find_municipality_by_name(
     return matches[0]
 
 
-def fetch_ibge_municipalities(
-    request_get: Any = requests.get,
-    timeout: float = 20.0,
+def load_local_municipality_catalog(
+    catalog_path: str | Path = DEFAULT_MUNICIPALITY_CATALOG_PATH,
 ) -> tuple[BrazilianMunicipality, ...]:
-    """Carrega o catálogo de municípios diretamente da API do IBGE."""
-    try:
-        response = request_get(
-            IBGE_MUNICIPALITIES_URL,
-            params={"orderBy": "nome"},
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except (requests.RequestException, ValueError) as error:
+    """Carrega e valida o catálogo municipal versionado no projeto."""
+    path = Path(catalog_path)
+    if not path.is_file():
         raise MunicipalityCatalogError(
-            "Não foi possível carregar o catálogo de municípios do IBGE."
+            "O catálogo local de municípios não foi encontrado em "
+            f"'{path}'. Execute scripts/build_municipality_catalog.py."
+        )
+
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as catalog_file:
+            reader = csv.DictReader(catalog_file)
+            missing_columns = set(CATALOG_COLUMNS) - set(reader.fieldnames or ())
+            if missing_columns:
+                missing = ", ".join(sorted(missing_columns))
+                raise MunicipalityCatalogError(
+                    f"O catálogo local não contém as colunas obrigatórias: {missing}."
+                )
+            municipalities = [
+                _parse_catalog_row(row, row_number)
+                for row_number, row in enumerate(reader, start=2)
+            ]
+    except MunicipalityCatalogError:
+        raise
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise MunicipalityCatalogError(
+            "Não foi possível ler o catálogo local de municípios."
         ) from error
 
-    if not isinstance(payload, list):
-        raise MunicipalityCatalogError(
-            "O catálogo de municípios do IBGE retornou um formato inesperado."
-        )
-
-    municipalities: list[BrazilianMunicipality] = []
-    for item in payload:
-        municipality = _parse_municipality(item)
-        if municipality is not None:
-            municipalities.append(municipality)
-
-    unique_by_code = {
-        municipality.ibge_code: municipality for municipality in municipalities
-    }
-    if len(unique_by_code) < 5_000:
-        raise MunicipalityCatalogError(
-            "O catálogo de municípios do IBGE está incompleto no momento."
-        )
-
+    _validate_catalog(municipalities)
     return tuple(
         sorted(
-            unique_by_code.values(),
+            municipalities,
             key=lambda municipality: (
                 normalize_search_text(municipality.name),
                 municipality.state_code,
@@ -169,223 +172,94 @@ def fetch_ibge_municipalities(
     )
 
 
-def fetch_ibge_municipality_coordinates(
-    ibge_code: int,
-    request_get: Any = requests.get,
-    timeout: float = 20.0,
+def validate_municipality_coordinates(
+    latitude: object,
+    longitude: object,
 ) -> tuple[float, float]:
-    """Obtém um ponto interno da malha oficial do município no IBGE."""
-    if int(ibge_code) <= 0:
-        raise MunicipalityLocationError(
-            "O município selecionado não possui código IBGE validado."
-        )
-
+    """Valida coordenadas finitas dentro do envelope geográfico do Brasil."""
     try:
-        response = request_get(
-            IBGE_MUNICIPALITY_MESH_URL.format(ibge_code=int(ibge_code)),
-            params={
-                "qualidade": "minima",
-                "formato": "application/vnd.geo+json",
-            },
-            headers={"Accept": "application/vnd.geo+json"},
-            timeout=timeout,
-        )
-        response.raise_for_status()
-        payload = response.json()
-    except (requests.RequestException, ValueError) as error:
+        parsed_latitude = float(latitude)
+        parsed_longitude = float(longitude)
+    except (TypeError, ValueError) as error:
         raise MunicipalityLocationError(
-            "Não foi possível validar a localização do município no IBGE."
+            "O município selecionado não possui coordenadas locais válidas."
         ) from error
 
-    geometry = _extract_geometry(payload, int(ibge_code))
-    longitude, latitude = _representative_point(geometry)
-    if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+    if not _coordinates_are_valid(parsed_latitude, parsed_longitude):
         raise MunicipalityLocationError(
-            "O IBGE retornou coordenadas inválidas para o município selecionado."
+            "O município selecionado não possui coordenadas locais válidas."
         )
-    return latitude, longitude
+    return parsed_latitude, parsed_longitude
 
 
-def _parse_municipality(item: object) -> BrazilianMunicipality | None:
-    if not isinstance(item, dict):
-        return None
-    state = _extract_state(item)
-    if state is None:
-        return None
-
+def _parse_catalog_row(
+    row: dict[str, str | None],
+    row_number: int,
+) -> BrazilianMunicipality:
     try:
-        ibge_code = int(item["id"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    name = str(item.get("nome") or "").strip()
-    state_code = str(state.get("sigla") or "").strip().upper()
-    state_name = str(state.get("nome") or "").strip()
-    if not name or len(state_code) != 2 or not state_name:
-        return None
-    return BrazilianMunicipality(ibge_code, name, state_code, state_name)
+        ibge_code = int(str(row.get("ibge_code") or "").strip())
+        latitude = float(str(row.get("latitude") or "").strip())
+        longitude = float(str(row.get("longitude") or "").strip())
+    except ValueError as error:
+        raise MunicipalityCatalogError(
+            f"O catálogo local contém valores inválidos na linha {row_number}."
+        ) from error
 
-
-def _extract_state(item: dict[str, object]) -> dict[str, object] | None:
-    immediate_region = item.get("regiao-imediata")
-    if isinstance(immediate_region, dict):
-        intermediate_region = immediate_region.get("regiao-intermediaria")
-        if isinstance(intermediate_region, dict):
-            state = intermediate_region.get("UF")
-            if isinstance(state, dict):
-                return state
-
-    microregion = item.get("microrregiao")
-    if isinstance(microregion, dict):
-        mesoregion = microregion.get("mesorregiao")
-        if isinstance(mesoregion, dict):
-            state = mesoregion.get("UF")
-            if isinstance(state, dict):
-                return state
-    return None
-
-
-def _extract_geometry(payload: object, ibge_code: int) -> dict[str, object]:
-    if not isinstance(payload, dict):
-        raise MunicipalityLocationError(
-            "A malha do município retornou um formato inesperado."
+    name = str(row.get("name") or "").strip()
+    state_code = str(row.get("uf") or "").strip().upper()
+    if len(str(ibge_code)) != 7 or ibge_code <= 0:
+        raise MunicipalityCatalogError(
+            f"O catálogo local contém código IBGE inválido na linha {row_number}."
         )
-    features = payload.get("features")
-    if not isinstance(features, list):
-        raise MunicipalityLocationError(
-            "A malha do município retornou um formato inesperado."
+    if not name:
+        raise MunicipalityCatalogError(
+            f"O catálogo local contém nome vazio na linha {row_number}."
         )
-    for feature in features:
-        if not isinstance(feature, dict):
-            continue
-        properties = feature.get("properties")
-        geometry = feature.get("geometry")
-        code = properties.get("codarea") if isinstance(properties, dict) else None
-        if str(code) == str(ibge_code) and isinstance(geometry, dict):
-            return geometry
-    raise MunicipalityLocationError(
-        "O IBGE não retornou a malha do município selecionado."
+    if state_code not in VALID_STATE_CODES:
+        raise MunicipalityCatalogError(
+            f"O catálogo local contém UF inválida na linha {row_number}."
+        )
+    if not _coordinates_are_valid(latitude, longitude):
+        raise MunicipalityCatalogError(
+            f"O catálogo local contém coordenadas inválidas na linha {row_number}."
+        )
+    return BrazilianMunicipality(
+        ibge_code=ibge_code,
+        name=name,
+        state_code=state_code,
+        state_name=STATE_NAMES[state_code],
+        latitude=latitude,
+        longitude=longitude,
     )
 
 
-def _representative_point(geometry: dict[str, object]) -> tuple[float, float]:
-    geometry_type = geometry.get("type")
-    coordinates = geometry.get("coordinates")
-    if geometry_type == "Polygon" and isinstance(coordinates, list):
-        polygons = [coordinates]
-    elif geometry_type == "MultiPolygon" and isinstance(coordinates, list):
-        polygons = coordinates
-    else:
-        raise MunicipalityLocationError(
-            "A malha do município não contém uma geometria compatível."
+def _validate_catalog(municipalities: list[BrazilianMunicipality]) -> None:
+    if len(municipalities) < MINIMUM_MUNICIPALITY_COUNT:
+        raise MunicipalityCatalogError(
+            "O catálogo local está incompleto: foram encontrados apenas "
+            f"{len(municipalities)} municípios."
         )
 
-    valid_polygons = [
-        polygon
-        for polygon in polygons
-        if isinstance(polygon, list)
-        and polygon
-        and isinstance(polygon[0], list)
-        and len(polygon[0]) >= 3
+    codes = [municipality.ibge_code for municipality in municipalities]
+    if len(codes) != len(set(codes)):
+        raise MunicipalityCatalogError(
+            "O catálogo local contém códigos IBGE duplicados."
+        )
+
+    names_by_state = [
+        (normalize_search_text(municipality.name), municipality.state_code)
+        for municipality in municipalities
     ]
-    if not valid_polygons:
-        raise MunicipalityLocationError(
-            "A malha do município não contém coordenadas suficientes."
+    if len(names_by_state) != len(set(names_by_state)):
+        raise MunicipalityCatalogError(
+            "O catálogo local contém municípios duplicados na mesma UF."
         )
-    polygon = max(valid_polygons, key=lambda item: abs(_ring_area(item[0])))
-    return _point_inside_polygon(polygon)
 
 
-def _point_inside_polygon(polygon: list[object]) -> tuple[float, float]:
-    exterior = polygon[0]
-    centroid = _ring_centroid(exterior)
-    if _contains_point(polygon, centroid):
-        return centroid
-
-    longitudes = [float(point[0]) for point in exterior]
-    latitudes = [float(point[1]) for point in exterior]
-    min_lon, max_lon = min(longitudes), max(longitudes)
-    min_lat, max_lat = min(latitudes), max(latitudes)
-    candidates: list[tuple[float, float]] = []
-    for row in range(1, 20):
-        latitude = min_lat + (max_lat - min_lat) * row / 20
-        for column in range(1, 20):
-            longitude = min_lon + (max_lon - min_lon) * column / 20
-            candidate = (longitude, latitude)
-            if _contains_point(polygon, candidate):
-                candidates.append(candidate)
-    if candidates:
-        return min(
-            candidates,
-            key=lambda point: math.dist(point, centroid),
-        )
-    raise MunicipalityLocationError(
-        "Não foi possível determinar um ponto interno seguro para o município."
+def _coordinates_are_valid(latitude: float, longitude: float) -> bool:
+    return (
+        math.isfinite(latitude)
+        and math.isfinite(longitude)
+        and BRAZIL_LATITUDE_RANGE[0] <= latitude <= BRAZIL_LATITUDE_RANGE[1]
+        and BRAZIL_LONGITUDE_RANGE[0] <= longitude <= BRAZIL_LONGITUDE_RANGE[1]
     )
-
-
-def _contains_point(
-    polygon: list[object],
-    point: tuple[float, float],
-) -> bool:
-    if not _point_in_ring(point, polygon[0]):
-        return False
-    return not any(
-        _point_in_ring(point, ring)
-        for ring in polygon[1:]
-        if isinstance(ring, list) and len(ring) >= 3
-    )
-
-
-def _point_in_ring(point: tuple[float, float], ring: list[object]) -> bool:
-    longitude, latitude = point
-    inside = False
-    previous = ring[-1]
-    for current in ring:
-        current_lon, current_lat = float(current[0]), float(current[1])
-        previous_lon, previous_lat = float(previous[0]), float(previous[1])
-        crosses = (current_lat > latitude) != (previous_lat > latitude)
-        if crosses:
-            intersection = (
-                (previous_lon - current_lon)
-                * (latitude - current_lat)
-                / (previous_lat - current_lat)
-                + current_lon
-            )
-            if longitude < intersection:
-                inside = not inside
-        previous = current
-    return inside
-
-
-def _ring_area(ring: list[object]) -> float:
-    area = 0.0
-    previous = ring[-1]
-    for current in ring:
-        area += float(previous[0]) * float(current[1])
-        area -= float(current[0]) * float(previous[1])
-        previous = current
-    return area / 2
-
-
-def _ring_centroid(ring: list[object]) -> tuple[float, float]:
-    area = _ring_area(ring)
-    if math.isclose(area, 0.0):
-        points = ring[:-1] if ring[0] == ring[-1] else ring
-        return (
-            sum(float(point[0]) for point in points) / len(points),
-            sum(float(point[1]) for point in points) / len(points),
-        )
-
-    longitude_sum = 0.0
-    latitude_sum = 0.0
-    previous = ring[-1]
-    for current in ring:
-        cross = (
-            float(previous[0]) * float(current[1])
-            - float(current[0]) * float(previous[1])
-        )
-        longitude_sum += (float(previous[0]) + float(current[0])) * cross
-        latitude_sum += (float(previous[1]) + float(current[1])) * cross
-        previous = current
-    factor = 1 / (6 * area)
-    return longitude_sum * factor, latitude_sum * factor
