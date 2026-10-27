@@ -18,3 +18,5 @@ data/processed/*.csv
 *.joblib
 *.parquet
 *.csv
+!data/reference/
+!data/reference/brazilian_municipalities.csv

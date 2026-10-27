@@ -29,13 +29,12 @@ from src.config.settings import sanitize_sensitive_text
 from src.data import weather_repository
 from src.data.brazilian_municipalities import BRAZIL_COUNTRY_CODE
 from src.data.brazilian_municipalities import BrazilianMunicipality
-from src.data.brazilian_municipalities import FALLBACK_CAPITALS
 from src.data.brazilian_municipalities import MunicipalityCatalogError
 from src.data.brazilian_municipalities import MunicipalityLocationError
-from src.data.brazilian_municipalities import fetch_ibge_municipalities
-from src.data.brazilian_municipalities import fetch_ibge_municipality_coordinates
 from src.data.brazilian_municipalities import find_municipality_by_name
 from src.data.brazilian_municipalities import format_municipality_option
+from src.data.brazilian_municipalities import load_local_municipality_catalog
+from src.data.brazilian_municipalities import validate_municipality_coordinates
 from src.data.inmet_client import InmetClient
 from src.data.inmet_client import InmetHistoricalDataError
 from src.data.inmet_client import normalize_city_name
@@ -476,16 +475,10 @@ def ensure_ml_artifacts_available_for_app(settings: Settings) -> dict[str, objec
     return ensure_ml_artifacts_available(settings)
 
 
-@st.cache_data(ttl=86_400, show_spinner=False)
+@st.cache_data(show_spinner=False)
 def load_municipality_catalog_for_app() -> tuple[BrazilianMunicipality, ...]:
-    """Mantém em cache o catálogo oficial de municípios do IBGE."""
-    return fetch_ibge_municipalities()
-
-
-@st.cache_data(ttl=604_800, show_spinner=False)
-def load_municipality_coordinates_for_app(ibge_code: int) -> tuple[float, float]:
-    """Mantém em cache a coordenada validada pela malha municipal do IBGE."""
-    return fetch_ibge_municipality_coordinates(ibge_code)
+    """Mantém em cache o catálogo municipal local versionado."""
+    return load_local_municipality_catalog()
 
 
 def prepare_ml_artifacts_for_dashboard(settings: Settings) -> dict[str, object]:
@@ -599,12 +592,14 @@ def build_query_form(
     compact: bool = False,
 ) -> tuple[dict[str, object], bool]:
     """Monta o formulário principal de consulta do dashboard."""
-    catalog_is_fallback = False
     try:
         municipalities = load_municipality_catalog_for_app()
-    except MunicipalityCatalogError:
-        municipalities = FALLBACK_CAPITALS
-        catalog_is_fallback = True
+    except MunicipalityCatalogError as error:
+        st.error(
+            "Erro de configuração: o catálogo local de municípios está ausente "
+            f"ou inválido. {error}"
+        )
+        return {}, False
 
     default_municipality = find_municipality_by_name(
         municipalities,
@@ -622,12 +617,6 @@ def build_query_form(
             st.caption(
                 "Selecione o município e o período histórico antes de buscar "
                 "os dados."
-            )
-        if catalog_is_fallback:
-            st.warning(
-                "O catálogo do IBGE está indisponível no momento. A seleção "
-                "temporária contém apenas capitais e permite usar a entrada "
-                "manual; a consulta à OpenWeather exige a validação do IBGE."
             )
         with st.form("weather_query_form"):
             municipality = st.selectbox(
@@ -674,6 +663,8 @@ def build_query_form(
             "state_code": municipality.state_code,
             "state_name": municipality.state_name,
             "ibge_code": municipality.ibge_code,
+            "latitude": municipality.latitude,
+            "longitude": municipality.longitude,
             "country": BRAZIL_COUNTRY_CODE,
             "start_year": int(start_year),
             "end_year": int(end_year),
@@ -711,8 +702,10 @@ def fetch_openweather_weather_data(
     municipality_name: str,
     state_code: str,
     ibge_code: int,
+    latitude: float,
+    longitude: float,
 ) -> dict[str, object] | None:
-    """Coleta dados atuais por coordenadas municipais validadas no IBGE."""
+    """Coleta dados atuais pelas coordenadas do catálogo municipal local."""
     municipality_name = municipality_name.strip()
     state_code = state_code.strip().upper()
     municipality_label = f"{municipality_name}/{state_code}"
@@ -736,8 +729,9 @@ def fetch_openweather_weather_data(
         return None
 
     try:
-        latitude, longitude = load_municipality_coordinates_for_app(
-            validated_ibge_code
+        latitude, longitude = validate_municipality_coordinates(
+            latitude,
+            longitude,
         )
         client = OpenWeatherClient(
             replace(settings, default_country=BRAZIL_COUNTRY_CODE)
@@ -3935,6 +3929,8 @@ def main() -> None:
 
     form_is_compact = bool(st.session_state.get("dashboard_query"))
     query, submitted = build_query_form(settings, compact=form_is_compact)
+    if not query:
+        return
     with st.expander("Opção secundária: entrada manual de dados atuais"):
         st.caption(
             "Use apenas quando não houver chave da OpenWeather ou para demonstrar "
@@ -3970,6 +3966,8 @@ def main() -> None:
                 str(query["municipality_name"]),
                 str(query["state_code"]),
                 int(query["ibge_code"]),
+                float(query["latitude"]),
+                float(query["longitude"]),
             )
             if weather_data:
                 st.session_state["dashboard_query"] = query

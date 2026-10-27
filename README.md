@@ -100,6 +100,42 @@ O projeto separa as fontes por finalidade:
 - `INMET Historico`: usado como base historica oficial para consulta,
   comparacao e futuro treinamento dos modelos.
 
+### Catalogo local de municipios
+
+O dashboard usa o arquivo versionado
+`data/reference/brazilian_municipalities.csv`. Ele contem codigo IBGE, nome
+oficial, UF, latitude e longitude dos 5.571 municipios presentes nas fontes no
+momento da geracao. O Streamlit le esse arquivo local com `st.cache_data`; abrir
+o site nao inicia download nem consulta ao IBGE.
+
+O catalogo combina duas fontes, sempre pelo codigo IBGE real:
+
+- o [servico oficial de Localidades do IBGE](https://servicodados.ibge.gov.br/api/docs/localidades),
+  usado como fonte autoritativa para codigo, nome e UF;
+- o projeto de terceiros
+  [kelvins/municipios-brasileiros](https://github.com/kelvins/municipios-brasileiros),
+  usado apenas para latitude e longitude auxiliares. Esse projeto e distribuido
+  sob a [licenca MIT](https://github.com/kelvins/municipios-brasileiros/blob/main/LICENSE)
+  (copyright Kelvin S. do Prado).
+
+As coordenadas da segunda fonte representam pontos de referencia e nao a malha
+ou os limites oficiais do municipio. Elas podem ter precisao limitada ou ficar
+desatualizadas apos mudancas territoriais. Por isso, a atualizacao cruza os
+conjuntos por codigo, rejeita codigos ausentes ou excedentes e valida UFs,
+duplicidades e limites geograficos antes de substituir o CSV.
+
+Para atualizar o catalogo, um desenvolvedor com acesso a internet deve executar:
+
+```powershell
+python scripts/build_municipality_catalog.py
+python -m pytest tests/test_brazilian_municipalities.py
+```
+
+O script consulta as duas fontes somente durante essa manutencao. O CSV gerado
+deve ser revisado e versionado junto com o codigo. Se o arquivo estiver ausente,
+incompleto ou invalido no deploy, o dashboard mostra um erro de configuracao e
+nao oferece codigos ou coordenadas de contingencia.
+
 ## Base Propria OpenWeather em Postgres
 
 A partir desta etapa, o projeto tambem possui uma base operacional propria em
@@ -791,15 +827,14 @@ da tela. Selecione uma opção pesquisável no formato `Município/UF`, informe 
 ano inicial e o ano final do histórico e clique em `Buscar dados e comparar com
 o histórico`. O país não é solicitado: o dashboard fixa internamente `BR`.
 
-O catálogo oficial de municípios é carregado da API de Localidades do IBGE e
-mantido em cache pelo Streamlit. A pesquisa aceita texto com ou sem acentos e a
-UF diferencia municípios homônimos. Para cada consulta, o sistema obtém a malha
-oficial pelo código IBGE, calcula um ponto interno e chama a OpenWeather por
-latitude e longitude. O retorno só é aceito quando confirma `BR` e coordenadas
-compatíveis; caso contrário, a consulta é interrompida com uma mensagem
-amigável. Se o IBGE estiver indisponível sem dados em cache, a interface oferece
-temporariamente as capitais apenas para preservar a entrada manual e não faz uma
-consulta OpenWeather sem localização validada.
+O catálogo local versionado é carregado e validado uma vez pelo cache do
+Streamlit. A pesquisa aceita texto com ou sem acentos e a UF diferencia
+municípios homônimos. Para cada consulta, o sistema usa diretamente a latitude
+e a longitude associadas ao código IBGE selecionado, sem acessar a API de Malhas
+do IBGE, e chama a OpenWeather por coordenadas. O retorno só é aceito quando
+confirma `BR` e coordenadas compatíveis; caso contrário, a consulta é
+interrompida com uma mensagem amigável, sem tentar silenciosamente outro
+município.
 
 Depois, o sistema usa as coordenadas para escolher a estação mais próxima no
 catálogo local do INMET, carrega o histórico no intervalo selecionado e executa
