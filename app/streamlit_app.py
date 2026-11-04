@@ -488,14 +488,34 @@ def prepare_ml_artifacts_for_dashboard(settings: Settings) -> dict[str, object]:
         and DEFAULT_EVALUATION_REPORT_PATH.exists()
     )
     if artifacts_already_available:
-        return ensure_ml_artifacts_available_for_app(settings)
+        return {
+            "available": True,
+            "downloaded": False,
+            "missing_files": [],
+            "message": "Artefatos de ML ja disponiveis localmente.",
+            "error_message": "",
+        }
 
-    st.info("Preparando artefatos de Machine Learning...")
-    with st.spinner("Preparando artefatos de Machine Learning..."):
+    with st.status(
+        "Preparando artefatos de Machine Learning...",
+        expanded=True,
+    ) as artifact_status:
+        st.write("Baixando apenas os arquivos ausentes da release configurada.")
         status = ensure_ml_artifacts_available_for_app(settings)
+        if status.get("available"):
+            artifact_status.update(
+                label="Artefatos de Machine Learning prontos.",
+                state="complete",
+                expanded=False,
+            )
+        else:
+            artifact_status.update(
+                label="Artefatos de Machine Learning indisponiveis.",
+                state="error",
+                expanded=True,
+            )
 
     if status.get("available"):
-        st.success("Artefatos de Machine Learning carregados com sucesso.")
         return status
 
     st.warning(
@@ -512,14 +532,34 @@ def prepare_inmet_database_for_historical_flow(settings: Settings) -> dict[str, 
     """Prepara o DuckDB historico antes de consultar catalogo e series."""
     database_was_available = database_exists(settings.inmet_database_path)
     if database_was_available:
-        return ensure_inmet_database_available_for_app(settings)
+        return {
+            "available": True,
+            "downloaded": False,
+            "path": settings.inmet_database_path,
+            "message": "Base historica do INMET ja disponivel localmente.",
+            "error_message": "",
+        }
 
-    st.info("Preparando a base histórica do INMET...")
-    with st.spinner("Preparando a base histórica do INMET..."):
+    with st.status(
+        "Preparando a base historica do INMET...",
+        expanded=True,
+    ) as database_download_status:
+        st.write("Baixando o DuckDB somente para a comparacao historica solicitada.")
         status = ensure_inmet_database_available_for_app(settings)
+        if status.get("available"):
+            database_download_status.update(
+                label="Base historica do INMET pronta.",
+                state="complete",
+                expanded=False,
+            )
+        else:
+            database_download_status.update(
+                label="Base historica do INMET indisponivel.",
+                state="error",
+                expanded=True,
+            )
 
     if status.get("available"):
-        st.success("Base histórica do INMET carregada com sucesso.")
         return status
 
     st.warning(
@@ -2706,6 +2746,54 @@ def build_database_station_catalog(db_path: str) -> pd.DataFrame:
     return catalog
 
 
+def artifact_file_fingerprint(path: str | Path) -> tuple[int, int] | None:
+    """Identifica a versao local de um artefato sem ler seu conteudo."""
+    artifact_path = Path(path)
+    try:
+        stat = artifact_path.stat()
+    except OSError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+@st.cache_data(show_spinner=False)
+def load_database_station_catalog_for_app(
+    db_path: str,
+    fingerprint: tuple[int, int] | None,
+) -> pd.DataFrame:
+    """Mantem o catalogo DuckDB em cache enquanto o arquivo nao mudar."""
+    del fingerprint
+    return build_database_station_catalog(db_path)
+
+
+@st.cache_data(show_spinner=False)
+def load_database_metadata_for_app(
+    db_path: str,
+    fingerprint: tuple[int, int] | None,
+) -> dict[str, Any]:
+    """Mantem o resumo DuckDB em cache enquanto o arquivo nao mudar."""
+    del fingerprint
+    return get_database_metadata(db_path)
+
+
+@st.cache_data(show_spinner=False)
+def load_database_station_history_for_app(
+    db_path: str,
+    fingerprint: tuple[int, int] | None,
+    station_code: str,
+    start_year: int,
+    end_year: int,
+) -> pd.DataFrame:
+    """Mantem cada recorte historico em cache enquanto o DuckDB nao mudar."""
+    del fingerprint
+    return load_station_history_from_database(
+        station_code,
+        start_year,
+        end_year,
+        db_path,
+    )
+
+
 def format_safe_table_rows(
     rows: list[dict[str, object]],
 ) -> list[dict[str, str]]:
@@ -2838,8 +2926,12 @@ def load_station_catalog_for_app(
 ) -> tuple[pd.DataFrame, str]:
     """Carrega catalogo pelo DuckDB quando existir, senao pelos ZIPs locais."""
     if database_exists(settings.inmet_database_path):
+        fingerprint = artifact_file_fingerprint(settings.inmet_database_path)
         return (
-            build_database_station_catalog(settings.inmet_database_path),
+            load_database_station_catalog_for_app(
+                settings.inmet_database_path,
+                fingerprint,
+            ),
             "database",
         )
 
@@ -2856,11 +2948,13 @@ def load_station_history_for_app(
 ) -> pd.DataFrame:
     """Carrega historico filtrado pela fonte disponivel."""
     if source == "database":
-        history = load_station_history_from_database(
+        fingerprint = artifact_file_fingerprint(settings.inmet_database_path)
+        history = load_database_station_history_for_app(
+            settings.inmet_database_path,
+            fingerprint,
             station_code,
             start_year,
             end_year,
-            settings.inmet_database_path,
         )
     else:
         history = client.load_station_history(station_code, start_year, end_year)
@@ -2951,11 +3045,12 @@ def show_simplified_analysis_section(
         )
         return
 
-    metadata = (
-        get_database_metadata(settings.inmet_database_path)
-        if historical_source == "database"
-        else None
-    )
+    metadata = None
+    if historical_source == "database":
+        metadata = load_database_metadata_for_app(
+            settings.inmet_database_path,
+            artifact_file_fingerprint(settings.inmet_database_path),
+        )
     source_status = build_historical_source_status(historical_source, metadata)
     station_selection_key = (
         f"{normalize_city_name(str(weather_data.get('city', '')))}_"
@@ -3109,7 +3204,10 @@ def show_inmet_historical_section(
         return
 
     if historical_source == "database":
-        metadata = get_database_metadata(settings.inmet_database_path)
+        metadata = load_database_metadata_for_app(
+            settings.inmet_database_path,
+            artifact_file_fingerprint(settings.inmet_database_path),
+        )
     else:
         metadata = None
 

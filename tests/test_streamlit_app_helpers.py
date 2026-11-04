@@ -1,5 +1,7 @@
 import pandas as pd
 
+from app import streamlit_app
+from app.streamlit_app import artifact_file_fingerprint
 from app.streamlit_app import build_current_pressure_text
 from app.streamlit_app import build_deploy_artifact_guidance
 from app.streamlit_app import build_historical_source_status
@@ -14,6 +16,7 @@ from app.streamlit_app import format_safe_table_rows
 from app.streamlit_app import historical_period_text
 from app.streamlit_app import historical_analysis_status
 from app.streamlit_app import load_station_catalog_for_app
+from app.streamlit_app import load_database_station_catalog_for_app
 from app.streamlit_app import load_station_history_for_app
 from app.streamlit_app import normalize_historical_datetime
 from app.streamlit_app import resolve_station_for_weather_data
@@ -90,6 +93,61 @@ def test_ensure_runtime_artifact_directories_creates_expected_dirs(tmp_path) -> 
     assert (tmp_path / "data/processed").is_dir()
     assert (tmp_path / "data/models").is_dir()
     assert (tmp_path / "data/reports").is_dir()
+
+
+def test_artifact_file_fingerprint_changes_with_file_version(tmp_path) -> None:
+    artifact = tmp_path / "artifact.duckdb"
+
+    assert artifact_file_fingerprint(artifact) is None
+
+    artifact.write_bytes(b"first")
+    first_fingerprint = artifact_file_fingerprint(artifact)
+    artifact.write_bytes(b"second-version")
+
+    assert first_fingerprint is not None
+    assert artifact_file_fingerprint(artifact) != first_fingerprint
+
+
+def test_database_catalog_cache_uses_artifact_fingerprint(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "history.duckdb"
+    database_path.write_bytes(b"first")
+    calls = []
+
+    def fake_catalog_loader(db_path):
+        calls.append(db_path)
+        return make_station_catalog()
+
+    load_database_station_catalog_for_app.clear()
+    monkeypatch.setattr(
+        streamlit_app,
+        "build_database_station_catalog",
+        fake_catalog_loader,
+    )
+
+    first_fingerprint = artifact_file_fingerprint(database_path)
+    first = load_database_station_catalog_for_app(
+        str(database_path),
+        first_fingerprint,
+    )
+    second = load_database_station_catalog_for_app(
+        str(database_path),
+        first_fingerprint,
+    )
+
+    assert first.equals(second)
+    assert calls == [str(database_path)]
+
+    database_path.write_bytes(b"second-version")
+    load_database_station_catalog_for_app(
+        str(database_path),
+        artifact_file_fingerprint(database_path),
+    )
+
+    assert calls == [str(database_path), str(database_path)]
+    load_database_station_catalog_for_app.clear()
 
 
 def test_build_deploy_artifact_guidance_handles_missing_artifacts(tmp_path) -> None:
