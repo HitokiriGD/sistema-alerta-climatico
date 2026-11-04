@@ -663,6 +663,23 @@ Use preferencialmente a branch `main` para publicar a demo. Branches de feature
 podem ser usadas para teste, mas a URL publica deve apontar para uma versao
 revisada.
 
+### Versao do Python e dependencias de ML
+
+O projeto foi desenvolvido e validado em Python 3.12. No Streamlit Community
+Cloud, selecione Python 3.12 em `Advanced settings` ao criar um novo deploy. A
+versao de Python de um aplicativo existente nao pode ser trocada em execucao;
+portanto, nao apague nem recrie a aplicacao apenas para este ajuste sem antes
+planejar a manutencao da URL, dos secrets e das configuracoes com o responsavel
+pelo deploy.
+
+O `requirements.txt` fixa `scikit-learn==1.9.0`, que e a versao usada para
+serializar o Random Forest publicado. O deploy tambem usa
+`xgboost-cpu==3.3.0`: essa e a distribuicao oficial minima para CPU e continua
+fornecendo o modulo Python `xgboost`, mas evita instalar suporte CUDA e pacotes
+NVIDIA desnecessarios no Streamlit Cloud. O XGBoost permanece necessario para
+os scripts e testes de treinamento e avaliacao, embora o artefato publicado
+atual seja um `RandomForestClassifier`.
+
 Configure os secrets no painel do Streamlit Cloud, sem commitar `.env`:
 
 ```toml
@@ -721,6 +738,13 @@ O download usa os assets configurados por `ML_MODEL_ASSET_NAME`,
 `ML_EVALUATION_REPORT_SHA256` sao validados quando configurados. Se o download
 falhar, o app continua funcionando com classificacao tecnica por regras,
 OpenWeather e historico INMET quando disponivel.
+
+Nenhum desses downloads ocorre apenas ao abrir a pagina inicial. Eles sao
+disparados somente depois que o usuario envia uma consulta que precisa da
+predicao ou da comparacao historica. Durante o primeiro download, o dashboard
+mostra o status da etapa. Catalogo, metadados e recortes do DuckDB ficam em
+cache e sao invalidados automaticamente se o arquivo local mudar, evitando
+novas consultas pesadas em reruns de widgets.
 
 Arquivos grandes e sensiveis nao sao versionados:
 
